@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>破晓行动 · 网页战术射击</title>
+<style>
+  :root { --hud: #ffd27a; --blue: #6fb1ff; --red: #ff7b6b; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d10; color: #e9e4d8;
+    font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", system-ui, sans-serif; user-select: none; }
+  canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  #top { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 14px;
+    background: rgba(0,0,0,.45); padding: 6px 16px; border-radius: 4px; font-size: 20px; font-weight: 700; }
+  #top .b { color: var(--blue); } #top .r { color: var(--red); }
+  #top small { font-size: 12px; font-weight: 400; opacity: .8; display: block; text-align: center; }
+  #timer { color: #fff; min-width: 64px; text-align: center; }
+
+  #bl, #br { position: absolute; bottom: 18px; display: flex; gap: 22px; align-items: flex-end;
+    color: var(--hud); text-shadow: 0 0 6px rgba(0,0,0,.9); }
+  #bl { left: 22px; } #br { right: 22px; text-align: right; }
+  .stat { font-size: 38px; font-weight: 700; line-height: 1; }
+  .stat small { display: block; font-size: 12px; font-weight: 400; opacity: .85; margin-bottom: 4px; }
+  #ammo span { font-size: 22px; opacity: .8; }
+  #money { position: absolute; right: 22px; bottom: 96px; color: #8fe08a; font-size: 24px; font-weight: 700; text-shadow: 0 0 6px #000; }
+  #wname { position: absolute; right: 22px; bottom: 130px; font-size: 14px; opacity: .85; text-shadow: 0 0 4px #000; }
+
+  #radar { position: absolute; left: 14px; top: 14px; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.5); border-radius: 3px; }
+  #feed { position: absolute; right: 16px; top: 14px; text-align: right; font-size: 14px; }
+  #feed div { background: rgba(0,0,0,.5); padding: 3px 8px; margin-bottom: 3px; border-radius: 3px; display: inline-block; clear: both; float: right; }
+  #feed .b { color: var(--blue); } #feed .r { color: var(--red); } #feed i { font-style: normal; opacity: .8; margin: 0 6px; }
+
+  #cross { position: absolute; left: 50%; top: 50%; --gap: 6px; }
+  #cross i { position: absolute; background: #7dff7d; box-shadow: 0 0 2px #000; }
+  #cross i:nth-child(1) { width: 2px; height: 9px; left: -1px; top: calc(-9px - var(--gap)); }
+  #cross i:nth-child(2) { width: 2px; height: 9px; left: -1px; top: var(--gap); }
+  #cross i:nth-child(3) { width: 9px; height: 2px; top: -1px; left: calc(-9px - var(--gap)); }
+  #cross i:nth-child(4) { width: 9px; height: 2px; top: -1px; left: var(--gap); }
+  #hit { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px; opacity: 0; transition: opacity .25s;
+    background: linear-gradient(45deg, transparent 46%, #fff 46%, #fff 54%, transparent 54%), linear-gradient(-45deg, transparent 46%, #fff 46%, #fff 54%, transparent 54%);
+    -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px); mask: radial-gradient(circle, transparent 5px, #000 6px); }
+  #hit.on { opacity: 1; transition: none; } #hit.hs { filter: drop-shadow(0 0 3px #f33) sepia(1) saturate(8) hue-rotate(-30deg); }
+  #dmg { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(200,0,0,.65)); opacity: 0; }
+  #scope { position: absolute; inset: 0; background: radial-gradient(circle at center, transparent 0, transparent 34vh, #000 34.4vh); }
+  #scope::before, #scope::after { content: ""; position: absolute; background: #000; }
+  #scope::before { left: 0; right: 0; top: 50%; height: 1px; } #scope::after { top: 0; bottom: 0; left: 50%; width: 1px; }
+
+  #msg { position: absolute; top: 24%; width: 100%; text-align: center; font-size: 30px; font-weight: 700; letter-spacing: 4px; text-shadow: 0 2px 10px #000; }
+  #sub { position: absolute; top: calc(24% + 48px); width: 100%; text-align: center; font-size: 15px; opacity: .9; text-shadow: 0 1px 6px #000; }
+
+  .panel { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: rgba(14,18,22,.92);
+    border: 1px solid rgba(255,210,122,.35); border-radius: 6px; padding: 18px 22px; }
+  #buy { min-width: 400px; } #buy h3, #board h3 { margin: 0 0 10px; color: var(--hud); font-size: 16px; letter-spacing: 2px; }
+  #buy .it { display: flex; justify-content: space-between; gap: 30px; padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,.07); font-size: 15px; }
+  #buy .it b { color: var(--hud); margin-right: 10px; } #buy .it.no { opacity: .35; } #buy p { font-size: 12px; opacity: .7; margin: 10px 0 0; }
+  #board { min-width: 520px; } #board table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 12px; }
+  #board th { text-align: left; font-weight: 400; opacity: .6; font-size: 12px; padding: 2px 8px; }
+  #board td { padding: 3px 8px; } #board tr.dead td { opacity: .4; } #board tr.me td { color: #fff; font-weight: 700; }
+  #board .b { color: var(--blue); } #board .r { color: var(--red); }
+
+  .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+    background: radial-gradient(ellipse at 50% 30%, rgba(40,52,64,.9), rgba(6,8,10,.96)); z-index: 10; }
+  .card { max-width: 640px; padding: 20px; }
+  h1 { font-size: 54px; margin: 0; letter-spacing: 10px; color: var(--hud); text-wrap: balance; }
+  h1 + p { letter-spacing: 6px; opacity: .65; margin: 6px 0 26px; font-size: 13px; }
+  .row { display: flex; gap: 10px; justify-content: center; align-items: center; margin: 12px 0; flex-wrap: wrap; }
+  .row > span { width: 70px; text-align: right; opacity: .7; font-size: 14px; }
+  button { font: inherit; color: #e9e4d8; background: #1b222a; border: 1px solid #3a4652; padding: 8px 18px; border-radius: 4px; cursor: pointer; }
+  button:hover { border-color: var(--hud); } button.sel { background: #4a3a14; border-color: var(--hud); color: #fff; }
+  button.go { font-size: 20px; padding: 12px 54px; margin-top: 16px; background: #7a5a12; border-color: var(--hud); color: #fff; letter-spacing: 6px; }
+  .keys { margin-top: 24px; font-size: 13px; line-height: 1.9; opacity: .75; }
+  kbd { background: #222a33; border: 1px solid #44505c; border-radius: 3px; padding: 0 6px; font-family: inherit; font-size: 12px; }
+  input[type=range] { accent-color: #ffd27a; width: 200px; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="hud" class="hidden">
+  <canvas id="radar" width="160" height="120"></canvas>
+  <div id="top">
+    <div class="b"><span id="scoreBlue">0</span><small>蓝队 <span id="aliveBlue">5</span></small></div>
+    <div id="timer">2:00</div>
+    <div class="r"><span id="scoreRed">0</span><small>红队 <span id="aliveRed">5</span></small></div>
+  </div>
+  <div id="feed"></div>
+  <div id="cross"><i></i><i></i><i></i><i></i></div>
+  <div id="hit"></div>
+  <div id="dmg"></div>
+  <div id="scope" class="hidden"></div>
+  <div id="msg"></div><div id="sub"></div>
+  <div id="bl">
+    <div class="stat"><small>生命</small><span id="hp">100</span></div>
+    <div class="stat"><small>护甲</small><span id="armor">0</span></div>
+  </div>
+  <div id="wname"></div>
+  <div id="money">$800</div>
+  <div id="br"><div class="stat" id="ammo"><small>弹药</small><b id="mag">12</b> <span id="res">/ 60</span></div></div>
+  <div id="buy" class="panel hidden"></div>
+  <div id="board" class="panel hidden"></div>
+</div>
+
+<div id="menu" class="overlay">
+  <div class="card">
+    <h1>破晓行动</h1><p>DAYBREAK OPS · 5v5 团队歼灭</p>
+    <div class="row" id="teamSel"><span>阵营</span><button data-v="blue" class="sel">蓝队</button><button data-v="red">红队</button></div>
+    <div class="row" id="diffSel"><span>电脑难度</span><button data-v="easy">简单</button><button data-v="normal" class="sel">普通</button><button data-v="hard">困难</button></div>
+    <div class="row"><span>灵敏度</span><input id="sens" type="range" min="0.3" max="3" step="0.1" value="1"></div>
+    <button class="go" id="start">开始战斗</button>
+    <div class="keys">
+      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动　<kbd>空格</kbd> 跳跃　<kbd>C</kbd> 蹲下　<kbd>Shift</kbd> 静步<br>
+      <kbd>鼠标左键</kbd> 开火　<kbd>右键</kbd> 开镜（狙击枪）　<kbd>R</kbd> 换弹　<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/<kbd>滚轮</kbd>/<kbd>Q</kbd> 切换武器<br>
+      <kbd>B</kbd> 购买（回合开始阶段）　<kbd>Tab</kbd> 计分板　<kbd>Esc</kbd> 暂停<br>
+      先赢得 8 个回合的队伍获胜。
+    </div>
+  </div>
+</div>
+<div id="pause" class="overlay hidden"><div class="card"><h1 style="font-size:36px">已暂停</h1><p>点击任意位置继续</p></div></div>
+<div id="end" class="overlay hidden"><div class="card"><h1 id="endTitle"></h1><p id="endSub"></p><button class="go" id="again">再来一局</button></div></div>
+
+<script type="module" src="src/game.js"></script>
+</body>
+</html>
