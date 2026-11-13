@@ -92,40 +92,53 @@ export function raycastWorld(ox, oy, oz, dx, dy, dz, maxT) {
   return null;
 }
 
-// ---------- A* 寻路 ----------
+// ---------- A* 寻路（二叉堆）----------
 const N = GW * GH;
-const gScore = new Float32Array(N), came = new Int32Array(N), closed = new Uint8Array(N);
+const gScore = new Float32Array(N), fScore = new Float32Array(N), came = new Int32Array(N), closed = new Uint8Array(N);
+const heap = new Int32Array(N * 8);
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 export function findPath(sx, sz, gx, gz, noise = 0) {
   if (!walkable(gx, gz) || !walkable(sx, sz)) return null;
   gScore.fill(Infinity); closed.fill(0);
   const start = sz * GW + sx, goal = gz * GW + gx;
   gScore[start] = 0; came[start] = -1;
-  const open = [start];
-  const hfn = (i) => {
-    const ax = Math.abs((i % GW) - gx), az = Math.abs(((i / GW) | 0) - gz);
-    return Math.max(ax, az) + 0.414 * Math.min(ax, az);
+  let hn = 0;
+  const push = (node, f) => {
+    let i = hn++; heap[i] = node; fScore[node] = f;
+    while (i > 0) { const p = (i - 1) >> 1; if (fScore[heap[p]] <= f) break; heap[i] = heap[p]; i = p; }
+    heap[i] = node;
   };
-  while (open.length) {
-    let bi = 0, bf = Infinity;
-    for (let i = 0; i < open.length; i++) {
-      const f = gScore[open[i]] + hfn(open[i]);
-      if (f < bf) { bf = f; bi = i; }
+  const pop = () => {
+    const top = heap[0], last = heap[--hn], f = fScore[last];
+    let i = 0;
+    for (;;) {
+      let c = i * 2 + 1; if (c >= hn) break;
+      if (c + 1 < hn && fScore[heap[c + 1]] < fScore[heap[c]]) c++;
+      if (fScore[heap[c]] >= f) break;
+      heap[i] = heap[c]; i = c;
     }
-    const cur = open[bi];
-    open[bi] = open[open.length - 1]; open.pop();
+    heap[i] = last;
+    return top;
+  };
+  push(start, 0);
+  while (hn > 0) {
+    const cur = pop();
     if (cur === goal) break;
     if (closed[cur]) continue;
     closed[cur] = 1;
     const cx = cur % GW, cz = (cur / GW) | 0;
-    for (const [ddx, ddz] of DIRS) {
-      const nx = cx + ddx, nz = cz + ddz;
+    for (let k = 0; k < 8; k++) {
+      const ddx = DIRS[k][0], ddz = DIRS[k][1], nx = cx + ddx, nz = cz + ddz;
       if (!walkable(nx, nz)) continue;
       if (ddx && ddz && (!walkable(cx + ddx, cz) || !walkable(cx, cz + ddz))) continue;
       const ni = nz * GW + nx;
       if (closed[ni]) continue;
       const ng = gScore[cur] + (ddx && ddz ? 1.414 : 1) * (1 + Math.random() * noise);
-      if (ng < gScore[ni]) { gScore[ni] = ng; came[ni] = cur; open.push(ni); }
+      if (ng < gScore[ni] && hn < heap.length) {
+        gScore[ni] = ng; came[ni] = cur;
+        const ax = Math.abs(nx - gx), az = Math.abs(nz - gz);
+        push(ni, ng + Math.max(ax, az) + 0.414 * Math.min(ax, az));
+      }
     }
   }
   if (gScore[goal] === Infinity) return null;
