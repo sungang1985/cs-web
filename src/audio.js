@@ -21,12 +21,32 @@ function renderShot(p, sr, far) {
   }
   return buf;
 }
+function renderStep(sr) {
+  const n = (sr * 0.12) | 0, buf = actx.createBuffer(1, n, sr), d = buf.getChannelData(0);
+  let lp = 0;
+  for (let i = 0; i < n; i++) { const t = i / sr; lp += 0.12 * (Math.random() * 2 - 1 - lp); d[i] = (lp * 2.2 * Math.exp(-t / 0.02) + Math.sin(2 * Math.PI * 95 * t) * Math.exp(-t / 0.03) * 0.5) * Math.min(1, (n - i) / 100); }
+  return buf;
+}
+let steps = 0;
+export function stepSound(dist, pan) {
+  if (!actx || steps >= 6) return;
+  const vol = (dist < 0.5 ? 0.1 : 0.32) / (1 + (dist / 7) ** 2);
+  if (vol < 0.01) return;
+  const src = actx.createBufferSource(); src.buffer = bufs.step; src.playbackRate.value = 0.85 + Math.random() * 0.3;
+  const g = actx.createGain(); g.gain.value = vol;
+  let out = g;
+  if (dist > 0.5 && actx.createStereoPanner) { const p = actx.createStereoPanner(); p.pan.value = pan; g.connect(p); out = p; }
+  src.connect(g); out.connect(master);
+  steps++; src.onended = () => { steps--; src.disconnect(); g.disconnect(); if (out !== g) out.disconnect(); };
+  src.start();
+}
 export function initAudio() {
   if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
   try {
     actx = new (window.AudioContext || window.webkitAudioContext)();
     const comp = actx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 6; comp.connect(actx.destination);
     master = actx.createGain(); master.gain.value = 0.55; master.connect(comp);
+    bufs.step = renderStep(actx.sampleRate);
     for (const id in SND) { bufs[id] = renderShot(SND[id], actx.sampleRate, false); bufs[id + '_far'] = renderShot(SND[id], actx.sampleRate, true); }
   } catch (e) { actx = null; }
 }

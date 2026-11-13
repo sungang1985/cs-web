@@ -97,8 +97,10 @@ const N = GW * GH;
 const gScore = new Float32Array(N), fScore = new Float32Array(N), came = new Int32Array(N), closed = new Uint8Array(N);
 const heap = new Int32Array(N * 8);
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-export function findPath(sx, sz, gx, gz, noise = 0) {
-  if (!walkable(gx, gz) || !walkable(sx, sz)) return null;
+// jump=true 时允许跳上矮箱（高度 ≤ 1），代价更高
+export function findPath(sx, sz, gx, gz, noise = 0, jump = false) {
+  const pass = (x, z) => { const h = cellH(x, z); return h === 0 || (jump && h <= 1); };
+  if (!pass(gx, gz) || !pass(sx, sz)) return null;
   gScore.fill(Infinity); closed.fill(0);
   const start = sz * GW + sx, goal = gz * GW + gx;
   gScore[start] = 0; came[start] = -1;
@@ -129,11 +131,12 @@ export function findPath(sx, sz, gx, gz, noise = 0) {
     const cx = cur % GW, cz = (cur / GW) | 0;
     for (let k = 0; k < 8; k++) {
       const ddx = DIRS[k][0], ddz = DIRS[k][1], nx = cx + ddx, nz = cz + ddz;
-      if (!walkable(nx, nz)) continue;
-      if (ddx && ddz && (!walkable(cx + ddx, cz) || !walkable(cx, cz + ddz))) continue;
+      if (!pass(nx, nz)) continue;
+      const hc = cellH(cx, cz), hn2 = cellH(nx, nz);
+      if (ddx && ddz && (hc !== 0 || hn2 !== 0 || !walkable(cx + ddx, cz) || !walkable(cx, cz + ddz))) continue;
       const ni = nz * GW + nx;
       if (closed[ni]) continue;
-      const ng = gScore[cur] + (ddx && ddz ? 1.414 : 1) * (1 + Math.random() * noise);
+      const ng = gScore[cur] + (ddx && ddz ? 1.414 : 1) * (1 + Math.random() * noise) + (hn2 > hc ? 1 : 0);
       if (ng < gScore[ni] && hn < heap.length) {
         gScore[ni] = ng; came[ni] = cur;
         const ax = Math.abs(nx - gx), az = Math.abs(nz - gz);

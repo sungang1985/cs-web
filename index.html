@@ -48,6 +48,9 @@
   #scope::before, #scope::after { content: ""; position: absolute; background: #000; }
   #scope::before { left: 0; right: 0; top: 50%; height: 1px; } #scope::after { top: 0; bottom: 0; left: 50%; width: 1px; }
 
+  #hint { position: absolute; top: 62%; width: 100%; text-align: center; font-size: 15px; color: #fff; text-shadow: 0 1px 6px #000; }
+  #fps { position: absolute; left: 14px; top: 142px; font-size: 12px; background: rgba(0,0,0,.5); padding: 2px 6px; border-radius: 3px; }
+  #dmg { will-change: opacity; }
   #msg { position: absolute; top: 24%; width: 100%; text-align: center; font-size: 30px; font-weight: 700; letter-spacing: 4px; text-shadow: 0 2px 10px #000; }
   #sub { position: absolute; top: calc(24% + 48px); width: 100%; text-align: center; font-size: 15px; opacity: .9; text-shadow: 0 1px 6px #000; }
 
@@ -91,7 +94,7 @@
   <div id="hit"></div>
   <div id="dmg"></div>
   <div id="scope" class="hidden"></div>
-  <div id="msg"></div><div id="sub"></div>
+  <div id="msg"></div><div id="sub"></div><div id="hint"></div><div id="fps" class="hidden"></div>
   <div id="bl">
     <div class="stat"><small>生命</small><span id="hp">100</span></div>
     <div class="stat"><small>护甲</small><span id="armor">0</span></div>
@@ -108,12 +111,14 @@
     <h1>破晓行动</h1><p>DAYBREAK OPS · 5v5 团队歼灭</p>
     <div class="row" id="teamSel"><span>阵营</span><button data-v="blue" class="sel">蓝队</button><button data-v="red">红队</button></div>
     <div class="row" id="diffSel"><span>电脑难度</span><button data-v="easy">简单</button><button data-v="normal" class="sel">普通</button><button data-v="hard">困难</button></div>
+    <div class="row" id="qualSel"><span>画质</span><button data-v="low">低</button><button data-v="medium">中</button><button data-v="high">高</button></div>
     <div class="row"><span>灵敏度</span><input id="sens" type="range" min="0.3" max="3" step="0.1" value="1"></div>
     <button class="go" id="start">开始战斗</button>
     <div class="keys">
       <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动　<kbd>空格</kbd> 跳跃　<kbd>C</kbd> 蹲下　<kbd>Shift</kbd> 静步<br>
       <kbd>鼠标左键</kbd> 开火　<kbd>右键</kbd> 开镜（狙击枪）　<kbd>R</kbd> 换弹　<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/<kbd>滚轮</kbd>/<kbd>Q</kbd> 切换武器<br>
-      <kbd>B</kbd> 购买（回合开始阶段）　<kbd>Tab</kbd> 计分板　<kbd>Esc</kbd> 暂停<br>
+      <kbd>E</kbd> 拾取/更换地上的枪　<kbd>G</kbd> 丢弃主武器　<kbd>B</kbd> 购买（回合开始阶段）<br>
+      <kbd>Tab</kbd> 计分板　<kbd>F3</kbd> 显示帧率　<kbd>Esc</kbd> 暂停　卡顿时请把画质调低<br>
       先赢得 8 个回合的队伍获胜。
     </div>
   </div>

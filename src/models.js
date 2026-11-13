@@ -1,5 +1,6 @@
 // 武器与角色模型（按骨骼合并网格 + 顶点色），以及持枪 IK、行走与倒地动画。
 import * as THREE from '../vendor/three.module.min.js';
+import { Q } from './settings.js';
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 const _col = new THREE.Color();
@@ -54,8 +55,10 @@ class Builder {
   }
 }
 
-export const gunMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.55 });
-export const bodyMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
+export const gunMat = Q.pbr ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.55 })
+  : new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 70, specular: 0x666666 });
+export const bodyMat = Q.pbr ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 })
+  : new THREE.MeshLambertMaterial({ vertexColors: true });
 
 // ======================= 武器 =======================
 const METAL = 0x3a3f46, METAL2 = 0x50565e, POLY = 0x22252a, WOOD = 0x7d4f27, WOOD2 = 0x5e3a1b, OLIVE = 0x4c5a3c, STEEL = 0xc2c7cc, LENS = 0x25506b;
@@ -282,13 +285,13 @@ export class Soldier {
     for (const id of ['pistol', 'smg', 'rifle', 'shotgun', 'sniper']) {
       const m = new THREE.Mesh(gunGeo(id), gunMat); m.visible = false; this.holder.add(m); this.guns[id] = m;
     }
-    this.gunId = 'pistol'; this.aim = 0; this.phase = Math.random() * 6; this.sf = 0; this.death = null; this.drop = null;
+    this.gunId = 'pistol'; this.aim = 0; this.cr = 0; this.ab = 0; this.phase = Math.random() * 6; this.sf = 0; this.death = null; this.drop = null;
     scene.add(this.root);
   }
   dispose() { this.scene.remove(this.root); this.scene.remove(this.holder); }
   setGun(id) { this.gunId = id; for (const k in this.guns) this.guns[k].visible = k === id; }
   reset() {
-    this.death = null; this.drop = null; this.aim = 0;
+    this.death = null; this.drop = null; this.aim = 0; this.cr = 0; this.ab = 0; this.holder.visible = true;
     this.anchor.add(this.holder); this.holder.position.set(0, 0, 0); this.holder.quaternion.identity(); this.holder.scale.setScalar(1);
     this.hips.position.set(0, HIP_Y, 0); this.hips.rotation.set(0, 0, 0);
     this.head.rotation.set(0, 0, 0); this.upper.rotation.set(0, 0, 0);
@@ -298,25 +301,29 @@ export class Soldier {
     return out.set(0, g.mv, g.mz).applyMatrix4(this.holder.matrixWorld);
   }
   // 存活状态：持枪 IK + 行走
-  update(dt, x, y, z, yaw, speed, aiming, pitch) {
+  update(dt, x, y, z, yaw, speed, aiming, pitch, crouch, air) {
     this.root.position.set(x, y, z); this.root.rotation.set(0, yaw, 0);
     const g = GUN[this.gunId], P = g.long ? POSE.long : POSE.pistol;
     this.aim += ((aiming ? 1 : 0) - this.aim) * (1 - Math.exp(-(aiming ? 14 : 5) * dt));
     const a = this.aim, sf = (this.sf += (Math.min(1, speed / 4.5) - this.sf) * (1 - Math.exp(-10 * dt)));
-    this.phase += speed * dt * 2.1;
+    const c = (this.cr += ((crouch ? 1 : 0) - this.cr) * (1 - Math.exp(-11 * dt)));
+    const ab = (this.ab += ((air ? 1 : 0) - this.ab) * (1 - Math.exp(-(air ? 16 : 10) * dt)));
+    this.phase += speed * dt * (2.1 + 1.2 * c);
     const ph = this.phase, sn = Math.sin(ph), cs = Math.cos(ph);
-    // 腿
-    const amp = 0.62 * sf;
-    this.th[0].rotation.x = sn * amp + 0.26 * a * (1 - sf) + 0.04; this.th[1].rotation.x = -sn * amp - 0.2 * a * (1 - sf) - 0.02;
-    this.th[0].rotation.z = 0.035; this.th[1].rotation.z = -0.035;
-    this.kn[0].rotation.x = -Math.max(0, cs) * 1.0 * sf - 0.3 * a * (1 - sf) - 0.06; this.kn[1].rotation.x = -Math.max(0, -cs) * 1.0 * sf - 0.2 * a * (1 - sf) - 0.06;
-    this.hips.position.set(0, HIP_Y - 0.035 * a * (1 - sf) - 0.012 + Math.abs(cs) * 0.03 * sf - 0.02 * sf, 0);
-    this.hips.rotation.set(0, sn * 0.06 * sf, 0);
+    // 腿：站立/行走、蹲姿（单膝跪）、腾空（收腿）三种姿势混合
+    const sw = (1 - c) * (1 - ab), jb = ab * (1 - c), amp = 0.62 * sf * (1 - 0.6 * c) * (1 - ab);
+    this.th[0].rotation.x = sn * amp + (0.26 * a * (1 - sf) + 0.04) * sw + 1.35 * c + 0.6 * jb;
+    this.th[1].rotation.x = -sn * amp - (0.2 * a * (1 - sf) + 0.02) * sw + 0.25 * c + 0.15 * jb;
+    this.th[0].rotation.z = 0.035 + 0.08 * c; this.th[1].rotation.z = -0.035 - 0.12 * c;
+    this.kn[0].rotation.x = -(Math.max(0, cs) * sf + 0.3 * a * (1 - sf) + 0.06) * sw - 2.2 * c - 1.05 * jb;
+    this.kn[1].rotation.x = -(Math.max(0, -cs) * sf + 0.2 * a * (1 - sf) + 0.06) * sw - 1.9 * c - 0.55 * jb;
+    this.hips.position.set(0, HIP_Y - (0.035 * a * (1 - sf) + 0.012 - Math.abs(cs) * 0.03 * sf + 0.02 * sf) * sw - 0.5 * c + Math.abs(sn) * 0.02 * sf * c, 0);
+    this.hips.rotation.set(0, sn * 0.06 * sf * (1 - c), 0);
     // 上身
     const tw = lerp(P.twL, P.twA, a);
-    this.upper.rotation.x = clamp(pitch, -0.7, 0.7) * a - 0.1 * sf * (1 - a) - 0.03;
+    this.upper.rotation.x = clamp(pitch, -0.7, 0.7) * a - 0.1 * sf * (1 - a) - 0.03 - 0.14 * c * (1 - a) - 0.04 * c + 0.08 * jb;
     this.chest.rotation.y = tw - sn * 0.05 * sf;
-    this.head.rotation.set(0.06 * a, -tw * 0.9, g.long ? -0.2 * a : 0);
+    this.head.rotation.set(0.06 * a + 0.1 * c * (1 - a), -tw * 0.9, g.long ? -0.2 * a : 0);
     // 武器位置
     const an = this.anchor;
     an.position.lerpVectors(P.lowP, P.aimP, a); an.quaternion.slerpQuaternions(P.lowQ, P.aimQ, a);

@@ -1,8 +1,9 @@
 import * as THREE from '../vendor/three.module.min.js';
-import { ROWS, CELL, GW, GH, WALL_H, walkable, spawns, collides, groundH, raycastWorld, findPath } from './map.js';
+import { ROWS, CELL, GW, GH, WALL_H, cellH, walkable, spawns, collides, groundH, raycastWorld, findPath } from './map.js';
 import * as TEX from './textures.js';
-import { Soldier, viewModel, GUN } from './models.js';
-import { initAudio, shotSound, beep, sndClick, sndReload, sndHit, sndHurt, sndSwish, sndJingle } from './audio.js';
+import { Soldier, viewModel, GUN, gunGeo, gunMat } from './models.js';
+import { Q, QUALITY, setQuality } from './settings.js';
+import { initAudio, shotSound, beep, sndClick, sndReload, sndHit, sndHurt, sndSwish, sndJingle, stepSound } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -37,12 +38,12 @@ const GRAV = 20, JUMP_V = 6.8, RUN = 5.4, R_BODY = 0.35;
 
 // ======================= 渲染基础 =======================
 const canvas = $('view');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-const PR_MAX = Math.min(devicePixelRatio || 1, 1.5);
-let pixelRatio = PR_MAX;
-renderer.setPixelRatio(pixelRatio);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: Q.aa, powerPreference: 'high-performance' });
+// 渲染像素有上限（按画质档位），高分屏不会按原生分辨率硬算；resScale 为自动降档系数
+let resScale = 1, pixelRatio = 1;
+const calcPR = () => Math.min(devicePixelRatio || 1, Math.sqrt(Q.pixels / (innerWidth * innerHeight))) * resScale;
+renderer.shadowMap.enabled = Q.shadow > 0;
+renderer.shadowMap.type = Q.shadow === 2 ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
 renderer.shadowMap.autoUpdate = false;           // 场景静态，阴影只渲染一次
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -56,21 +57,22 @@ camera.rotation.order = 'YXZ';
 
 const vmScene = new THREE.Scene();
 const vmCam = new THREE.PerspectiveCamera(52, 1, 0.01, 10);
-vmScene.add(new THREE.HemisphereLight(0xeaf2ff, 0x9a8462, 1.2));
+vmScene.add(new THREE.HemisphereLight(0xeaf2ff, 0x9a8462, Q.pbr ? 1.2 : 2.0));
 const vmSun = new THREE.DirectionalLight(0xfff0d8, 2.4); vmSun.position.set(1.5, 2, 1); vmScene.add(vmSun);
 
-scene.add(new THREE.HemisphereLight(0xcfe2ff, 0x9a8260, 1.1));
+scene.add(new THREE.HemisphereLight(0xcfe2ff, 0x9a8260, Q.pbr ? 1.1 : Q.shadow ? 1.6 : 1.9));
 const sun = new THREE.DirectionalLight(0xffedcc, 3.0);
 sun.position.set(GW * CELL / 2 + 34, 62, GH * CELL / 2 + 24);
 sun.target.position.set(GW * CELL / 2, 0, GH * CELL / 2);
-sun.castShadow = true;
-sun.shadow.mapSize.set(4096, 4096);
+sun.castShadow = Q.shadow > 0;
+sun.shadow.mapSize.set(Q.shadow === 2 ? 4096 : 2048, Q.shadow === 2 ? 4096 : 2048);
 Object.assign(sun.shadow.camera, { left: -58, right: 58, top: 58, bottom: -58, near: 1, far: 170 });
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
 
 function resize() {
   const w = innerWidth, h = innerHeight;
+  renderer.setPixelRatio(pixelRatio = calcPR());
   renderer.setSize(w, h, false);
   camera.aspect = vmCam.aspect = w / h;
   camera.updateProjectionMatrix(); vmCam.updateProjectionMatrix();
@@ -81,7 +83,7 @@ addEventListener('resize', resize); resize();
 const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), new THREE.MeshBasicMaterial({ map: TEX.skyTexture(), side: THREE.BackSide, fog: false, depthWrite: false }));
 sky.renderOrder = -1; sky.frustumCulled = false; scene.add(sky);
 // 用天空贴图生成环境反射，让金属与布料有更自然的受光
-{
+if (Q.pbr) {
   const pm = new THREE.PMREMGenerator(renderer), eq = sky.material.map.clone(); eq.mapping = THREE.EquirectangularReflectionMapping;
   scene.environment = vmScene.environment = pm.fromEquirectangular(eq).texture; pm.dispose(); eq.dispose();
 }
@@ -123,19 +125,20 @@ sky.renderOrder = -1; sky.frustumCulled = false; scene.add(sky);
   }
   const fw = GW * CELL, fh = GH * CELL;
   quad('floor', [[0, 0, fh], [fw, 0, fh], [fw, 0, 0], [0, 0, 0]], [[0, fh / S], [fw / S, fh / S], [fw / S, 0], [0, 0]]);
+  const mk = (tex, std) => (Q.pbr ? new THREE.MeshStandardMaterial({ ...tex, ...std }) : new THREE.MeshLambertMaterial(tex));
   const mats = {
-    wall: new THREE.MeshStandardMaterial({ ...TEX.wallTexture(), roughness: 0.95, normalScale: new THREE.Vector2(1.2, 1.2) }),
-    outer: new THREE.MeshStandardMaterial({ ...TEX.outerWallTexture(), roughness: 0.92 }),
-    floor: new THREE.MeshStandardMaterial({ ...TEX.floorTexture(), roughness: 0.93 }),
-    crate: new THREE.MeshStandardMaterial({ ...TEX.crateTexture(), roughness: 0.85 }),
-    cont: new THREE.MeshStandardMaterial({ ...TEX.containerTexture(), roughness: 0.6, metalness: 0.25 }),
+    wall: mk(TEX.wallTexture(), { roughness: 0.95, normalScale: new THREE.Vector2(1.2, 1.2) }),
+    outer: mk(TEX.outerWallTexture(), { roughness: 0.92 }),
+    floor: mk(TEX.floorTexture(), { roughness: 0.93 }),
+    crate: mk(TEX.crateTexture(), { roughness: 0.85 }),
+    cont: mk(TEX.containerTexture(), { roughness: 0.6, metalness: 0.25 }),
   };
   for (const k in B) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(B[k].p, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(B[k].n, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(B[k].uv, 2));
-    const m = new THREE.Mesh(g, mats[k]); m.castShadow = k !== 'floor'; m.receiveShadow = true; m.matrixAutoUpdate = false; m.frustumCulled = false;
+    const m = new THREE.Mesh(g, mats[k]); m.castShadow = Q.shadow > 0 && k !== 'floor'; m.receiveShadow = Q.shadow > 0; m.matrixAutoUpdate = false; m.frustumCulled = false;
     scene.add(m);
   }
   renderer.shadowMap.needsUpdate = true;
@@ -189,6 +192,13 @@ const vmRoot = new THREE.Group(); vmScene.add(vmRoot);
 let vmGuns = {};
 const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.26), new THREE.MeshBasicMaterial({ map: texFlash, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
 flash.visible = false; vmRoot.add(flash);
+// 开镜遮罩：用一个全屏着色器绘制，避免切换大面积 DOM 图层造成停顿
+const scopeMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: { aspect: { value: 1 } }, transparent: true, depthTest: false, depthWrite: false,
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+  fragmentShader: 'varying vec2 vUv; uniform float aspect; void main(){ vec2 p = (vUv - 0.5) * vec2(aspect, 1.0); float r = length(p); float a = smoothstep(0.338, 0.343, r); float l = (1.0 - step(0.0011, min(abs(p.x), abs(p.y)))) * 0.9; float v = smoothstep(0.2, 0.34, r) * 0.35; gl_FragColor = vec4(0.0, 0.0, 0.0, max(max(a, l), v)); }',
+}));
+scopeMesh.frustumCulled = false; scopeMesh.renderOrder = 10; scopeMesh.visible = false; vmScene.add(scopeMesh);
 function buildViewModels(team) {
   for (const id in vmGuns) { vmRoot.remove(vmGuns[id]); vmGuns[id].children[1].geometry.dispose(); }
   vmGuns = {};
@@ -199,9 +209,9 @@ function warmUp() {
   const shown = [];
   for (const o of [...puffs.map((p) => p.s), ...botFlashes.map((p) => p.s), flash]) { if (!o.visible) { o.visible = true; shown.push(o); } }
   const vis = vmRoot.visible; vmRoot.visible = true;
-  const dc = decalMesh.count; decalMesh.count = 1;
+  const dc = decalMesh.count; decalMesh.count = 1; scopeMesh.visible = true;
   renderer.compile(scene, camera); renderer.compile(vmScene, vmCam);
-  decalMesh.count = dc; vmRoot.visible = vis;
+  decalMesh.count = dc; vmRoot.visible = vis; scopeMesh.visible = false;
   for (const o of shown) o.visible = false;
 }
 
@@ -220,7 +230,7 @@ function makeFighter(name, team, isPlayer) {
     inv: [null, 'pistol', 'knife'], cur: 1, ammo: {}, nextFire: 0, reloadEnd: 0, lastShot: -9, heat: 0, deathT: 1, gy: 0, lastDeath: 0,
     rig: new Soldier(team, scene), blob: new THREE.Mesh(blobGeo, blobMat),
     // AI
-    path: null, pi: 0, target: null, react: 0, thinkT: 0, strafeDir: 0, strafeT: 0, burst: 0, pauseT: 0, stuckT: 0, sx: 0, sz: 0, look: null, lastSeen: null, hearT: 0, aimPitch: 0,
+    path: null, pi: 0, target: null, react: 0, thinkT: 0, strafeDir: 0, strafeT: 0, burst: 0, pauseT: 0, stuckT: 0, sx: 0, sz: 0, look: null, lastSeen: null, hearT: 0, aimPitch: 0, stanceT: 0, sneak: false, stepD: 0,
   };
   f.rig.root.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
   f.blob.frustumCulled = false; scene.add(f.blob);
@@ -317,7 +327,7 @@ function fireWeapon(f, dir, w, spread) {
     if (b.isPlayer || !b.alive || b.team === f.team || b.target || time < b.hearT) continue;
     if (Math.abs(b.x - f.x) + Math.abs(b.z - f.z) < 55) {
       b.hearT = time + rand(1.5, 2.5);
-      if (Math.random() < 0.6) { b.look = { x: f.x, z: f.z, until: time + 1.5 }; goTo(b, f.x, f.z); }
+      if (Math.random() < 0.6) { b.look = { x: f.x, z: f.z, until: time + 1.5 }; goTo(b, f.x, f.z, Math.random() < 0.4); }
     }
   }
 }
@@ -337,8 +347,8 @@ function kill(v, att, head, w) {
   const rig = v.rig;
   if (v === player) {
     scoped = false; buyOpen = false; specTarget = null;
-    rig.root.visible = true; rig.setGun(v.inv[v.cur] === 'knife' ? 'pistol' : v.inv[v.cur]);
-    rig.aim = 1; rig.update(0.016, v.x, v.y, v.z, v.yaw, 0, true, v.pitch);
+    rig.root.visible = true; rig.setGun(v.inv[0] || 'pistol');
+    rig.aim = 1; rig.cr = v.crouch ? 1 : 0; rig.update(0.016, v.x, v.y, v.z, v.yaw, 0, true, v.pitch, v.crouch, false);
   }
   // 倒地方向：正面中弹向后仰，背后中弹向前扑；并检查该方向是否有空间
   const fx = -Math.sin(v.yaw), fz = -Math.cos(v.yaw);
@@ -348,6 +358,59 @@ function kill(v, att, head, w) {
   if (space < 1.65) { const o = sp(-dir); if (o > space) { dir = -dir; space = o; } }
   v.gy = groundH(v.x, v.z, 0.1); v.vy = Math.min(v.vy, 0);
   rig.startDeath(dir, space, v.gy);
+  // 手中的枪掉在地上，可被拾取
+  const did = v.inv[0] || 'pistol';
+  items.push({ id: did, mag: v.ammo[did].mag, res: v.ammo[did].res, obj: rig.holder, loose: false });
+}
+
+// ======================= 地面武器（拾取 / 丢弃）=======================
+const items = [];
+let nearItem = null, itemT = 0;
+function clearItems() { for (const it of items) { if (it.loose) scene.remove(it.obj); else it.obj.visible = true; } items.length = 0; nearItem = null; }
+function dropLoose(f) {
+  const id = f.inv[0]; if (!id) return;
+  const m = new THREE.Mesh(gunGeo(id), gunMat), fx = -Math.sin(f.yaw), fz = -Math.cos(f.yaw);
+  let x = f.x + fx * 0.9, z = f.z + fz * 0.9;
+  if (collides(x, f.y, z, 0.3)) { x = f.x; z = f.z; }
+  m.position.set(x, groundH(x, z, 0.05) + 0.024, z); m.rotation.set(0, Math.random() * 6.28, Math.PI / 2, 'YXZ');
+  scene.add(m);
+  items.push({ id, mag: f.ammo[id].mag, res: f.ammo[id].res, obj: m, loose: true, noAuto: f.isPlayer });
+  f.inv[0] = null;
+}
+function takeItem(f, it) {
+  const w = W[it.id], i = items.indexOf(it); if (i < 0) return;
+  items.splice(i, 1);
+  if (it.loose) scene.remove(it.obj); else it.obj.visible = false;
+  if (w.slot === 0) {
+    if (f.inv[0]) dropLoose(f);
+    f.inv[0] = it.id; f.ammo[it.id] = { mag: it.mag, res: it.res };
+    if (f.isPlayer) { const ls = f.cur === 0 ? lastSlot : f.cur; f.cur = -1; switchTo(0); lastSlot = ls; }
+    else { f.cur = 0; f.reloadEnd = 0; f.rig.setGun(it.id); }
+  } else { const a = f.ammo.pistol; a.res = Math.min(W.pistol.res, a.res + it.mag + it.res); }
+  if (f.isPlayer) beep(650, 0.06, 0.14, 'triangle');
+}
+function itemNear(f, it, r) { const o = it.obj.position; return Math.abs(o.x - f.x) < r && Math.abs(o.z - f.z) < r && Math.abs(o.y - f.y) < 1.6; }
+function updateItems(dt) {
+  itemT -= dt; if (itemT > 0) return; itemT = 0.1;
+  nearItem = null;
+  const p = player;
+  if (p.alive) {
+    let bd = 1e9;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i]; if (!itemNear(p, it, 1.5)) { it.noAuto = false; continue; }
+      const w = W[it.id];
+      if (w.slot === 0 && !p.inv[0] && !it.noAuto) { takeItem(p, it); continue; }           // 没有主武器：自动拾取
+      if (w.slot === 1) { if (p.ammo.pistol.res < W.pistol.res) takeItem(p, it); continue; }   // 手枪：补充弹药
+      const d = Math.hypot(it.obj.position.x - p.x, it.obj.position.z - p.z);
+      if (d < bd) { bd = d; nearItem = it; }
+    }
+  }
+  setText('hint', nearItem ? `按 E ${p.inv[0] ? '更换为' : '拾取'} ${W[nearItem.id].name}` : '');
+  // 只有手枪的电脑路过时会捡起主武器
+  for (let k = 0; k < fighters.length; k++) {
+    const b = fighters[k]; if (b.isPlayer || !b.alive || b.inv[0]) continue;
+    for (let i = 0; i < items.length; i++) if (W[items[i].id].slot === 0 && itemNear(b, items[i], 1.3)) { takeItem(b, items[i]); break; }
+  }
 }
 
 // ======================= 玩家输入 =======================
@@ -382,6 +445,7 @@ function buy(item) {
   player.money -= price; beep(900, 0.08, 0.15, 'triangle');
 }
 addEventListener('keydown', (e) => {
+  if (e.code === 'F3') { e.preventDefault(); fpsShow = !fpsShow; $('fps').classList.toggle('hidden', !fpsShow); }
   if (!inGame()) return;
   if (['Tab', 'Space', 'ControlLeft', 'KeyC'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
@@ -393,6 +457,8 @@ addEventListener('keydown', (e) => {
   else if (/^Digit[1-3]$/.test(e.code)) switchTo(+e.code.slice(5) - 1);
   else if (e.code === 'KeyQ') switchTo(lastSlot);
   else if (e.code === 'KeyR') startReload(player);
+  else if (e.code === 'KeyE') { if (nearItem) takeItem(player, nearItem); }
+  else if (e.code === 'KeyG') { if (player.inv[0]) { dropLoose(player); if (player.cur === 0) { player.cur = -1; switchTo(1); } lastSlot = 1; } }
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; if (e.code === 'Tab') boardOpen = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouseDown = false; });
@@ -450,7 +516,7 @@ function updatePlayer(dt) {
   moveFighter(p, p.vx * dt, p.vz * dt, dt);
   p.eyeH += ((p.crouch ? 1.05 : 1.6) - p.eyeH) * (1 - Math.exp(-14 * dt));
   const hs = Math.hypot(p.vx, p.vz);
-  if (p.onGround) bob += hs * dt * 1.9;
+  if (p.onGround) { bob += hs * dt * 1.9; if (hs > 3.5 && !p.crouch && (p.stepD += hs * dt) > 2.3) { p.stepD = 0; stepSound(0, 0); } }
 
   if (p.reloadEnd && time >= p.reloadEnd) finishReload(p, w);
   if (time - p.lastShot > w.rate * 1.6) p.heat = Math.max(0, p.heat - dt * 9);
@@ -487,7 +553,7 @@ function updatePlayer(dt) {
 }
 
 // ======================= 电脑 AI =======================
-function goTo(b, x, z) {
+function goTo(b, x, z, sneak = false) {
   let gx = clamp(Math.floor(x / CELL), 0, GW - 1), gz = clamp(Math.floor(z / CELL), 0, GH - 1);
   if (!walkable(gx, gz)) {
     let found = false;
@@ -496,21 +562,24 @@ function goTo(b, x, z) {
         for (let dx = -r; dx <= r && !found; dx++) if (walkable(gx + dx, gz + dz)) { gx += dx; gz += dz; found = true; }
     if (!found) return;
   }
-  const p = findPath(Math.floor(b.x / CELL), Math.floor(b.z / CELL), gx, gz, 0.6);
-  if (p) { b.path = p; b.pi = 1; b.stuckT = 0; b.sx = b.x; b.sz = b.z; }
+  const p = findPath(Math.floor(b.x / CELL), Math.floor(b.z / CELL), gx, gz, 0.6, true);
+  if (p) { b.sneak = sneak; b.path = p; b.pi = 1; b.stuckT = 0; b.sx = b.x; b.sz = b.z; }
 }
 function pickGoal(b) {
   // 残局或回合后半段：主动搜索敌人的大致位置，避免双方互相错过
   const foe = b.team === 'blue' ? 'red' : 'blue';
+  if (!b.inv[0]) {   // 只有手枪：优先去捡附近地上的主武器
+    for (const it of items) if (W[it.id].slot === 0 && Math.abs(it.obj.position.x - b.x) + Math.abs(it.obj.position.z - b.z) < 30) { goTo(b, it.obj.position.x, it.obj.position.z); if (b.path) return; }
+  }
   if ((aliveN[foe] <= 2 || roundT < ROUND_TIME - 30) && Math.random() < 0.75) {
     let best = null, bd = 1e9;
     for (const e of fighters) { if (!e.alive || e.team !== foe) continue; const d = Math.abs(e.x - b.x) + Math.abs(e.z - b.z) + Math.random() * 20; if (d < bd) { bd = d; best = e; } }
-    if (best) { goTo(b, best.x + rand(-4, 4), best.z + rand(-4, 4)); if (b.path && b.path.length > 9) b.path.length = 9; return; }
+    if (best) { goTo(b, best.x + rand(-4, 4), best.z + rand(-4, 4), bd < 30 && Math.random() < 0.5); if (b.path && b.path.length > 9) b.path.length = 9; return; }
   }
   const r = Math.random();
   if (r < 0.5) { const s = spawns[b.team === 'blue' ? 'red' : 'blue'][(Math.random() * 6) | 0]; goTo(b, s.x, s.z); }
   else if (r < 0.7) goTo(b, GW * CELL / 2 + rand(-8, 8), GH * CELL / 2 + rand(-8, 8));
-  else goTo(b, rand(2, GW * CELL - 2), rand(2, GH * CELL - 2));
+  else goTo(b, rand(2, GW * CELL - 2), rand(2, GH * CELL - 2), Math.random() < 0.3);
 }
 function canSee(a, b) {
   const ox = a.x, oy = a.y + a.eyeH, oz = a.z;
@@ -524,7 +593,8 @@ const _aim = new THREE.Vector3();
 function updateBot(b, dt) {
   const w = curW(b), act = state === 'live' || state === 'roundEnd';
   if (b.reloadEnd && time >= b.reloadEnd) finishReload(b, w);
-  if (!act) { b.vx = b.vz = 0; moveFighter(b, 0, 0, dt); return; }
+  b.eyeH += ((b.crouch ? 1.05 : 1.6) - b.eyeH) * (1 - Math.exp(-12 * dt));
+  if (!act) { b.vx = b.vz = 0; b.crouch = false; moveFighter(b, 0, 0, dt); return; }
 
   b.thinkT -= dt;
   if (b.thinkT <= 0) {
@@ -542,7 +612,14 @@ function updateBot(b, dt) {
     if (best) {
       if (b.target !== best) { b.react = diff.react * rand(0.7, 1.4); b.burst = 0; b.pauseT = 0; }
       b.target = best; b.lastSeen = { x: best.x, z: best.z };
-    } else if (b.target) { b.target = null; if (b.lastSeen) goTo(b, b.lastSeen.x, b.lastSeen.z); }
+    } else if (b.target) { b.target = null; b.crouch = false; if (b.lastSeen) goTo(b, b.lastSeen.x, b.lastSeen.z, Math.random() < 0.5); }
+    else if (time >= b.hearT) {   // 听脚步：附近有敌人在跑动（静步/蹲行听不到）
+      for (let k = 0; k < fighters.length; k++) {
+        const e = fighters[k];
+        if (!e.alive || e.team === b.team || e.crouch || !e.onGround) continue;
+        if (Math.abs(e.x - b.x) + Math.abs(e.z - b.z) < 11 && e.vx * e.vx + e.vz * e.vz > 12) { b.hearT = time + 2; b.look = { x: e.x, z: e.z, until: time + 1.8 }; goTo(b, e.x, e.z, true); break; }
+      }
+    }
   }
 
   let mx = 0, mz = 0;
@@ -555,11 +632,22 @@ function updateBot(b, dt) {
     b.aimPitch = Math.atan2(dy, dist);
     b.react -= dt;
     b.strafeT -= dt;
-    if (b.strafeT <= 0) { b.strafeDir = ((Math.random() * 3) | 0) - 1; b.strafeT = rand(0.4, 1.1); }
+    if (b.strafeT <= 0) {
+      b.strafeDir = ((Math.random() * 3) | 0) - 1; b.strafeT = rand(0.4, 1.1);
+      if (dist < 10 && b.onGround && !b.crouch && Math.random() < 0.18) { b.vy = JUMP_V; b.onGround = false; }   // 近战时偶尔跳跃躲闪
+    }
+    // 中远距离交火时不时蹲下射击（更稳、目标更小）
+    b.stanceT -= dt;
+    if (b.stanceT <= 0) {
+      if (!b.crouch && dist > 9 && b.onGround && Math.random() < 0.45) { b.crouch = true; b.stanceT = rand(1.0, 2.6); }
+      else { b.crouch = false; b.stanceT = rand(1.2, 3.5); }
+    }
+    if (dist < 6) b.crouch = false;
     const rx = Math.cos(b.yaw), rz = -Math.sin(b.yaw);
-    mx = rx * b.strafeDir * speed * 0.55; mz = rz * b.strafeDir * speed * 0.55;
+    const sk = b.crouch ? 0.18 : 0.55;
+    mx = rx * b.strafeDir * speed * sk; mz = rz * b.strafeDir * speed * sk;
     const pref = w.id === 'shotgun' ? 7 : 28;
-    if (dist > pref) { mx += dx / dist * speed * 0.6; mz += dz / dist * speed * 0.6; }
+    if (dist > pref && !b.crouch) { mx += dx / dist * speed * 0.6; mz += dz / dist * speed * 0.6; }
     const a = b.ammo[w.id];
     if (a.mag <= 0) startReload(b);
     else if (b.react <= 0 && Math.abs(da) < 0.3 && !b.reloadEnd && time >= b.nextFire) {
@@ -570,27 +658,30 @@ function updateBot(b, dt) {
         b.nextFire = time + (w.auto ? w.rate : w.rate * rand(1.6, 3));
         if (b.burst === 0) b.pauseT = w.auto ? rand(0.25, 0.6) : 0;
         _aim.set(dx, dy, dz).normalize();
-        const err = diff.err * (1 + Math.hypot(t.vx, t.vz) * 0.1) * (w.id === 'sniper' ? 0.5 : 1);
+        const err = diff.err * (1 + Math.hypot(t.vx, t.vz) * 0.1) * (w.id === 'sniper' ? 0.5 : 1) * (b.crouch ? 0.75 : 1) * (b.onGround ? 1 : 2);
         _aim.copy(spreadDir(_aim, err, true));
         fireWeapon(b, _aim, w, w.spread);
       }
     }
   } else {
-    b.aimPitch = 0;
+    b.aimPitch = 0; b.crouch = false;
     if (!b.reloadEnd && !w.melee && b.ammo[w.id].mag < w.mag * 0.4) startReload(b);
     if (!b.path || b.pi >= b.path.length) pickGoal(b);
     if (b.path && b.pi < b.path.length) {
       const wp = b.path[b.pi], dx = wp.x - b.x, dz = wp.z - b.z, d = Math.hypot(dx, dz);
       if (d < 0.45) b.pi++;
       else {
-        mx = dx / d * speed; mz = dz / d * speed;
+        const sp2 = b.sneak ? speed * 0.5 : speed;   // 静步接近
+        mx = dx / d * sp2; mz = dz / d * sp2;
+        // 前方是矮箱：起跳
+        if (b.onGround && cellH(Math.floor(wp.x / CELL), Math.floor(wp.z / CELL)) > b.y + 0.1 && d < 1.9) { b.vy = JUMP_V; b.onGround = false; }
         let want = Math.atan2(-dx, -dz);
         if (b.look && time < b.look.until) want = Math.atan2(-(b.look.x - b.x), -(b.look.z - b.z));
         b.yaw += clamp(angDiff(want, b.yaw), -6 * dt, 6 * dt);
       }
       b.stuckT += dt;
       if (b.stuckT > 1.2) {
-        if (Math.hypot(b.x - b.sx, b.z - b.sz) < 0.5) b.path = null;
+        if (Math.hypot(b.x - b.sx, b.z - b.sz) < 0.5) { b.path = null; if (b.onGround && Math.random() < 0.5) { b.vy = JUMP_V; b.onGround = false; } }
         b.stuckT = 0; b.sx = b.x; b.sz = b.z;
       }
     }
@@ -632,7 +723,7 @@ function startRound() {
       if (!f.alive) { f.inv[0] = null; f.armor = 0; f.cur = 1; giveWeapon(f, 'pistol'); }
       Object.assign(f, {
         x: sp[i].x, y: 0, z: sp[i].z, vx: 0, vz: 0, vy: 0, yaw: team === 'blue' ? -Math.PI / 2 : Math.PI / 2, pitch: 0,
-        hp: 100, alive: true, reloadEnd: 0, nextFire: 0, heat: 0, target: null, path: null, look: null, lastSeen: null, crouch: false, eyeH: 1.6, deathT: 1, hearT: 0, aimPitch: 0,
+        hp: 100, alive: true, sneak: false, stanceT: 0, reloadEnd: 0, nextFire: 0, heat: 0, target: null, path: null, look: null, lastSeen: null, crouch: false, eyeH: 1.6, deathT: 1, hearT: 0, aimPitch: 0,
       });
       i++;
       f.rig.reset(); f.rig.root.visible = !f.isPlayer;
@@ -640,7 +731,7 @@ function startRound() {
     }
     aliveN[team] = i;
   }
-  decalI = 0; decalMesh.count = 0;
+  decalI = 0; decalMesh.count = 0; clearItems();
   scoped = false; buyOpen = false; specTarget = null; punchP = punchY = 0;
   setMsg(`第 ${roundNo} 回合`, '按 B 购买装备', FREEZE_TIME);
 }
@@ -678,6 +769,7 @@ function endMatch() {
   if (document.pointerLockElement) document.exitPointerLock();
 }
 function newMatch(team, diffKey) {
+  clearItems();
   for (const f of fighters) { f.rig.dispose(); scene.remove(f.blob); }
   fighters.length = 0; score.blue = score.red = 0; roundNo = 0; time = 0; msgUntil = 0;
   diff = DIFF[diffKey];
@@ -771,7 +863,6 @@ function updateHUD(dt) {
   const showCross = p.alive && !scoped && !w.scope;
   setHidden('cross', !showCross);
   if (showCross) setStyle('cross', '--gap', Math.round(4 + (w.melee ? 0 : (w.spread + p.heat * w.heat + Math.hypot(p.vx, p.vz) / RUN * w.move + (p.onGround ? 0 : 0.07)) * 420)) + 'px');
-  setHidden('scope', !scoped);
   hitT -= dt;
   const hc = hitT > 0 ? (hitHS ? 'on hs' : 'on') : '';
   if (hudCache.hit !== hc) { hudCache.hit = hc; $('hit').className = hc; }
@@ -796,7 +887,13 @@ function updateMeshes(dt) {
     if (f.alive) {
       f.blob.visible = !f.isPlayer;
       if (f.isPlayer) continue;
-      rig.update(dt, f.x, f.y, f.z, f.yaw, Math.hypot(f.vx, f.vz), !!f.target || time - f.lastShot < 1.2, f.aimPitch);
+      const sp = Math.hypot(f.vx, f.vz);
+      rig.update(dt, f.x, f.y, f.z, f.yaw, sp, !!f.target || time - f.lastShot < 1.2, f.aimPitch, f.crouch, !f.onGround);
+      if (sp > 3.5 && f.onGround && !f.crouch && (f.stepD += sp * dt) > 2.3) {   // 跑动脚步声
+        f.stepD = 0;
+        const dx = f.x - camera.position.x, dz = f.z - camera.position.z, dist = Math.hypot(dx, dz) || 1;
+        if (dist < 22) stepSound(dist, clamp((dx * Math.cos(camera.rotation.y) - dz * Math.sin(camera.rotation.y)) / dist, -1, 1) * 0.8);
+      }
       f.blob.position.set(f.x, groundH(f.x, f.z, 0.1) + 0.025, f.z); f.blob.rotation.y = 0; f.blob.scale.set(1.1, 1, 1.1);
     } else if (rig.death && (f.deathT < 1 || !rig.drop.done)) {
       f.deathT = Math.min(1, f.deathT + dt / 0.85);
@@ -846,6 +943,7 @@ function updateCamera(dt) {
   }
   if (Math.abs(camera.fov - fov) > 0.1) { camera.fov += (fov - camera.fov) * (1 - Math.exp(-22 * dt)); camera.updateProjectionMatrix(); }
 
+  scopeMesh.visible = scoped; if (scoped) scopeMesh.material.uniforms.aspect.value = camera.aspect;
   const show = p.alive && !scoped;
   vmRoot.visible = show;
   if (show) {
@@ -864,15 +962,16 @@ function updateCamera(dt) {
 }
 
 // ======================= 主循环 =======================
-let last = performance.now(), fAcc = 0, fN = 0, goodT = 0;
-// 帧率不足时自动降低渲染分辨率，稳定后再逐步恢复
+let last = performance.now(), fAcc = 0, fN = 0, slowN = 0, fpsShow = false, fpsAvg = 16;
+// 持续帧率不足时降低渲染分辨率。只降不升，避免来回切换造成周期性停顿
 function adaptResolution(ms) {
   fAcc += ms; fN++;
-  if (fN < 45) return;
-  const avg = fAcc / fN; fAcc = 0; fN = 0;
-  if (avg > 21 && pixelRatio > 0.7) { pixelRatio = Math.max(0.7, pixelRatio * 0.85); renderer.setPixelRatio(pixelRatio); goodT = 0; }
-  else if (avg < 11 && pixelRatio < PR_MAX) { if (++goodT >= 8) { pixelRatio = Math.min(PR_MAX, pixelRatio * 1.1); renderer.setPixelRatio(pixelRatio); goodT = 0; } }
-  else goodT = 0;
+  if (fN < 60) return;
+  const avg = fAcc / fN; fAcc = 0; fN = 0; fpsAvg = avg;
+  if (fpsShow) $('fps').textContent = `${Math.round(1000 / avg)} FPS · ${Math.round(innerWidth * pixelRatio)}×${Math.round(innerHeight * pixelRatio)} · 画质${{ low: '低', medium: '中', high: '高' }[QUALITY]}`;
+  if (NOLOCK) return;
+  slowN = avg > 23 ? slowN + 1 : 0;
+  if (slowN >= 3 && resScale > 0.55) { resScale *= 0.85; slowN = 0; resize(); }
 }
 const perf = { frames: 0, worst: 0, sum: 0, logic: 0, logicWorst: 0, calls: 0 };
 renderer.info.autoReset = false;
@@ -881,13 +980,13 @@ function frame(now) {
   const raw = now - last; last = now;
   const dt = Math.min(0.05, raw / 1000), now0 = performance.now();
   if (inGame() && !paused) {
-    if (raw < 200 && !NOLOCK) adaptResolution(raw);
+    if (raw < 200) adaptResolution(raw);
     time += dt;
     updateRound(dt);
     if (state !== 'matchEnd') {
       if (player.alive) updatePlayer(dt);
       for (let i = 0; i < fighters.length; i++) { const f = fighters[i]; if (!f.isPlayer && f.alive) updateBot(f, dt); }
-      updateMeshes(dt); updateCamera(dt); updateHUD(dt);
+      updateItems(dt); updateMeshes(dt); updateCamera(dt); updateHUD(dt);
     }
   } else if (state === 'menu') {
     const a = now / 9000;
@@ -899,7 +998,7 @@ function frame(now) {
   renderer.info.reset();
   renderer.clear();
   renderer.render(scene, camera);
-  if (vmRoot.visible && inGame()) { renderer.clearDepth(); renderer.render(vmScene, vmCam); }
+  if ((vmRoot.visible || scopeMesh.visible) && inGame()) { renderer.clearDepth(); renderer.render(vmScene, vmCam); }
   const cpu = performance.now() - now0; perf.frames++; perf.sum += cpu; if (cpu > perf.worst) perf.worst = cpu; perf.calls = renderer.info.render.calls;
 }
 requestAnimationFrame(frame);
@@ -911,7 +1010,8 @@ for (const id of ['teamSel', 'diffSel'])
     choice[id] = b.dataset.v;
     $(id).querySelectorAll('button').forEach((o) => o.classList.toggle('sel', o === b));
   }));
+$('qualSel').querySelectorAll('button').forEach((b) => { b.classList.toggle('sel', b.dataset.v === QUALITY); b.onclick = () => { if (b.dataset.v !== QUALITY) setQuality(b.dataset.v); }; });
 $('start').onclick = () => newMatch(choice.teamSel, choice.diffSel);
 $('again').onclick = () => { $('end').classList.add('hidden'); $('menu').classList.remove('hidden'); state = 'menu'; };
 
-window.__game = { get state() { return state; }, get player() { return player; }, fighters, get time() { return time; }, score, renderer, camera, kill, W, perf, get pixelRatio() { return pixelRatio; } };
+window.__game = { get state() { return state; }, get player() { return player; }, fighters, get time() { return time; }, score, renderer, camera, kill, W, perf, items, get pixelRatio() { return pixelRatio; } };

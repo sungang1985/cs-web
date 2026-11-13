@@ -1,5 +1,6 @@
 // 程序化贴图：逐像素生成颜色 + 高度，再由高度推导法线贴图。
 import * as THREE from '../vendor/three.module.min.js';
+import { Q } from './settings.js';
 
 // ---------- 可平铺的值噪声 ----------
 const NS = 256, lattice = new Float32Array(NS * NS);
@@ -48,8 +49,8 @@ function generate(w, h, fn, bump) {
   ng.putImageData(nimg, 0, 0);
   const map = new THREE.CanvasTexture(cc), normalMap = new THREE.CanvasTexture(nc);
   map.colorSpace = THREE.SRGBColorSpace;
-  for (const t of [map, normalMap]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; }
-  return { map, normalMap };
+  for (const t of [map, normalMap]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = Q.aniso; }
+  return Q.normal ? { map, normalMap } : { map };
 }
 
 function brick(u, v, cols, rows) {
