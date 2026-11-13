@@ -500,6 +500,13 @@ function goTo(b, x, z) {
   if (p) { b.path = p; b.pi = 1; b.stuckT = 0; b.sx = b.x; b.sz = b.z; }
 }
 function pickGoal(b) {
+  // 残局或回合后半段：主动搜索敌人的大致位置，避免双方互相错过
+  const foe = b.team === 'blue' ? 'red' : 'blue';
+  if ((aliveN[foe] <= 2 || roundT < ROUND_TIME - 30) && Math.random() < 0.75) {
+    let best = null, bd = 1e9;
+    for (const e of fighters) { if (!e.alive || e.team !== foe) continue; const d = Math.abs(e.x - b.x) + Math.abs(e.z - b.z) + Math.random() * 20; if (d < bd) { bd = d; best = e; } }
+    if (best) { goTo(b, best.x + rand(-4, 4), best.z + rand(-4, 4)); if (b.path && b.path.length > 9) b.path.length = 9; return; }
+  }
   const r = Math.random();
   if (r < 0.5) { const s = spawns[b.team === 'blue' ? 'red' : 'blue'][(Math.random() * 6) | 0]; goTo(b, s.x, s.z); }
   else if (r < 0.7) goTo(b, GW * CELL / 2 + rand(-8, 8), GH * CELL / 2 + rand(-8, 8));
