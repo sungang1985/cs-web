@@ -58,7 +58,7 @@ export function initAudio() {
     for (const id in SND) { bufs[id] = renderShot(SND[id], actx.sampleRate, false); bufs[id + '_far'] = renderShot(SND[id], actx.sampleRate, true); }
   } catch (e) { actx = null; }
 }
-export function shotSound(id, dist, pan) {
+export function shotSound(id, dist, pan, delay = 0) {
   if (!actx) return;
   const vol = SND[id].v / (1 + (dist / 18) ** 2);
   if (vol < 0.012 || voices >= (dist < 1 ? 20 : 12)) return;
@@ -68,7 +68,7 @@ export function shotSound(id, dist, pan) {
   if (dist > 0 && actx.createStereoPanner) { const p = actx.createStereoPanner(); p.pan.value = pan; g.connect(p); out = p; }
   src.connect(g); out.connect(master);
   voices++; src.onended = () => { voices--; src.disconnect(); g.disconnect(); if (out !== g) out.disconnect(); };
-  src.start();
+  src.start(actx.currentTime + Math.min(delay, 0.4));
 }
 export function beep(freq, dur, vol = 0.2, type = 'square', delay = 0) {
   if (!actx) return;

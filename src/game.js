@@ -13,16 +13,16 @@ const NOLOCK = new URLSearchParams(location.search).has('nolock');
 
 // ======================= 配置 =======================
 const W = {
-  smg:     { id: 'smg',     name: '蜂鸟 冲锋枪',   slot: 0, dmg: 21,  rate: 0.075, auto: true,  mag: 30, res: 120, reload: 2.1, spread: 0.013, heat: 0.0035, kick: 0.016, move: 0.012, speed: 0.98, price: 1500 },
-  shotgun: { id: 'shotgun', name: '铁砧 霰弹枪',   slot: 0, dmg: 13,  rate: 0.85,  auto: false, mag: 7,  res: 28,  reload: 2.6, spread: 0.055, heat: 0,      kick: 0.09,  move: 0.01,  speed: 0.95, price: 1700, pellets: 8 },
-  rifle:   { id: 'rifle',   name: '雷鸣 突击步枪', slot: 0, dmg: 32,  rate: 0.1,   auto: true,  mag: 30, res: 90,  reload: 2.4, spread: 0.005, heat: 0.0045, kick: 0.028, move: 0.03,  speed: 0.93, price: 2700 },
-  sniper:  { id: 'sniper',  name: '鹰眼 狙击步枪', slot: 0, dmg: 105, rate: 1.3,   auto: false, mag: 5,  res: 20,  reload: 3.0, spread: 0.0006, heat: 0,     kick: 0.07,  move: 0.08,  speed: 0.85, price: 4500, scope: true, unscoped: 0.07 },
-  pistol:  { id: 'pistol',  name: 'P9 手枪',       slot: 1, dmg: 27,  rate: 0.14,  auto: false, mag: 12, res: 60,  reload: 1.7, spread: 0.008, heat: 0.006,  kick: 0.03,  move: 0.012, speed: 1 },
+  smg:     { id: 'smg',     name: '蜂鸟 冲锋枪',   slot: 0, dmg: 22,  rate: 0.075, auto: true,  mag: 30, res: 60, max: 150, reload: 2.1, spread: 0.011, heat: 0.0035, kick: 0.016, move: 0.012, speed: 0.98, price: 1500, v: 400, fall: 0.5,  pen: 0 },
+  shotgun: { id: 'shotgun', name: '铁砧 霰弹枪',   slot: 0, dmg: 14,  rate: 0.85,  auto: false, mag: 7,  res: 14, max: 35,  reload: 0.55, spread: 0.05, heat: 0,      kick: 0.09,  move: 0.01,  speed: 0.95, price: 1700, v: 400, fall: 2.2,  pen: 0, pellets: 8, shell: true },
+  rifle:   { id: 'rifle',   name: '雷鸣 突击步枪', slot: 0, dmg: 33,  rate: 0.1,   auto: true,  mag: 30, res: 60, max: 120, reload: 2.4, spread: 0.004, heat: 0.0045, kick: 0.028, move: 0.03,  speed: 0.93, price: 2700, v: 720, fall: 0.18, pen: 2.3 },
+  sniper:  { id: 'sniper',  name: '鹰眼 狙击步枪', slot: 0, dmg: 105, rate: 1.3,   auto: false, mag: 5,  res: 10, max: 30,  reload: 3.0, spread: 0.0005, heat: 0,     kick: 0.07,  move: 0.08,  speed: 0.85, price: 4500, v: 850, fall: 0.06, pen: 4.5, scope: true, unscoped: 0.07 },
+  pistol:  { id: 'pistol',  name: 'P9 手枪',       slot: 1, dmg: 28,  rate: 0.14,  auto: false, mag: 12, res: 36, max: 72,  reload: 1.7, spread: 0.007, heat: 0.006,  kick: 0.03,  move: 0.012, speed: 1, v: 360, fall: 0.55, pen: 0 },
   knife:   { id: 'knife',   name: '战术匕首',      slot: 2, dmg: 45,  rate: 0.45,  melee: true, range: 2.4, speed: 1.05 },
 };
 const BUY = [
   { key: '1', w: 'smg' }, { key: '2', w: 'shotgun' }, { key: '3', w: 'rifle' }, { key: '4', w: 'sniper' },
-  { key: '5', name: '防弹衣', price: 650, armor: true }, { key: '6', name: '补充弹药', price: 200, ammo: true },
+  { key: '5', name: '防弹衣', price: 650, armor: true }, { key: '6', name: '补充弹药（装满弹匣，备弹补到上限）', price: 200, ammo: true },
 ];
 const DIFF = {
   easy:   { react: 0.8,  err: 0.075, turn: 4 },
@@ -201,17 +201,11 @@ if (Q.pbr) {
 
 // ======================= 特效（全部池化，少量绘制调用）=======================
 const texFlash = TEX.flashTexture(), texSoft = TEX.softTexture();
-const TR_N = 40, trPos = new Float32Array(TR_N * 6), trCol = new Float32Array(TR_N * 6), trLife = new Float32Array(TR_N);
+const TR_N = 96, trPos = new Float32Array(TR_N * 6), trCol = new Float32Array(TR_N * 6), trLife = new Float32Array(TR_N);
 const trGeo = new THREE.BufferGeometry();
 trGeo.setAttribute('position', new THREE.BufferAttribute(trPos, 3)); trGeo.setAttribute('color', new THREE.BufferAttribute(trCol, 3));
 const tracerMesh = new THREE.LineSegments(trGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
 tracerMesh.frustumCulled = false; scene.add(tracerMesh);
-let tracerI = 0, tracersActive = 0;
-function tracer(ax, ay, az, bx, by, bz) {
-  const i = tracerI++ % TR_N, o = i * 6;
-  trPos[o] = ax; trPos[o + 1] = ay; trPos[o + 2] = az; trPos[o + 3] = bx; trPos[o + 4] = by; trPos[o + 5] = bz;
-  trLife[i] = 0.07; tracersActive = 2;
-}
 const DEC_N = 120;
 const decalMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.2, 0.2), new THREE.MeshBasicMaterial({ map: TEX.decalTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }), DEC_N);
 decalMesh.count = 0; decalMesh.frustumCulled = false; scene.add(decalMesh);
@@ -327,10 +321,21 @@ function startReload(f) {
   const w = curW(f), a = f.ammo[w.id];
   if (w.melee || f.reloadEnd || a.mag >= w.mag) return;
   if (a.res <= 0) { if (f.isPlayer) return; a.res = w.mag * 2; }
-  f.reloadEnd = time + w.reload;
+  f.reloadDur = w.shell ? w.reload + 0.35 : w.reload;
+  f.reloadEnd = time + f.reloadDur;
   if (f.isPlayer) { sndReload(); scoped = false; }
 }
-function finishReload(f, w) { const a = f.ammo[w.id], n = Math.min(w.mag - a.mag, a.res); a.mag += n; a.res -= n; f.reloadEnd = 0; }
+function finishReload(f, w) {
+  const a = f.ammo[w.id];
+  if (w.shell) {                       // 霰弹枪一发一发装，可随时开火打断
+    a.mag++; a.res--;
+    if (a.mag < w.mag && a.res > 0) { f.reloadDur = w.reload; f.reloadEnd = time + w.reload; if (f.isPlayer) sndClick(); }
+    else f.reloadEnd = 0;
+    return;
+  }
+  const cap = w.mag + (a.mag > 0 ? 1 : 0);   // 弹匣未打空时换弹，膛内保留一发
+  const n = Math.min(cap - a.mag, a.res); a.mag += n; a.res -= n; f.reloadEnd = 0;
+}
 function moveFighter(f, dx, dz, dt) {
   if (!collides(f.x + dx, f.y, f.z, R_BODY)) f.x += dx; else f.vx = 0;
   if (!collides(f.x, f.y, f.z + dz, R_BODY)) f.z += dz; else f.vz = 0;
@@ -340,7 +345,7 @@ function moveFighter(f, dx, dz, dt) {
 }
 
 // ---------- 命中检测（无临时对象）----------
-let rfHead = false;
+let rfHead = false, rfZone = 1;
 function rayFighter(ox, oy, oz, dx, dy, dz, f) {
   const hh = f.eyeH + 0.15;
   let tBody = Infinity, tHead = Infinity, t0 = 0, t1 = Infinity, ok = true, ta, tb, tmp;
@@ -360,7 +365,10 @@ function rayFighter(ox, oy, oz, dx, dy, dz, f) {
   if (disc >= 0 && b > 0) tHead = Math.max(0, b - Math.sqrt(disc));
   if (tHead === Infinity && tBody === Infinity) return -1;
   rfHead = tHead <= tBody + 0.35;
-  return rfHead ? tHead : tBody;
+  if (rfHead) { rfZone = 4; return tHead; }
+  const rel = (oy + dy * tBody - f.y) / hh;        // 腿 0.75 / 腹 1.25 / 胸 1
+  rfZone = rel < 0.45 ? 0.75 : rel < 0.6 ? 1.25 : 1;
+  return tBody;
 }
 const _d = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3(), _base = new THREE.Vector3(), _mz = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
 function spreadDir(dir, s, gauss) {
@@ -370,39 +378,94 @@ function spreadDir(dir, s, gauss) {
   const a = Math.random() * Math.PI * 2;
   return _d.copy(dir).addScaledVector(_r, Math.cos(a) * rad).addScaledVector(_u, Math.sin(a) * rad).normalize();
 }
+// 子弹是有初速、受重力和空气阻力影响的实体，逐帧推进并检测碰撞；可穿透木箱和人体
+const BN = 96, bullets = [];
+for (let i = 0; i < BN; i++) bullets.push({ on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, ox: 0, oy: 0, oz: 0, dist: 0, dmg: 0, w: null, owner: null, skip: null, whiz: false });
+let bulletI = 0, bulletsOn = 0;
+function insideSolid(x, y, z) { return y < cellH(Math.floor(x / CELL), Math.floor(z / CELL)); }
+function impactFx(x, y, z, nx, ny, nz, big) {
+  decal(x, y, z, nx, ny, nz);
+  if (!big) return;
+  puff(x + nx * 0.06, y + ny * 0.06, z + nz * 0.06, 0xcdbd9c, 0.3, 0.35);
+  for (let k = 0; k < 3; k++) particle(x + nx * 0.03, y + ny * 0.03, z + nz * 0.03, nx * rand(0.5, 2.5) + rand(-1.2, 1.2), ny * rand(0.5, 2.5) + rand(0.2, 2.2), nz * rand(0.5, 2.5) + rand(-1.2, 1.2), rand(0.35, 0.7), rand(0.012, 0.03), rand(0.012, 0.03), 0x8a7a62);
+}
+function updateBullets(dt) {
+  if (!bulletsOn) { tracerMesh.visible = false; return; }
+  bulletsOn = 0;
+  for (let i = 0; i < BN; i++) {
+    const b = bullets[i], o = i * 6;
+    if (!b.on) { trCol[o] = trCol[o + 1] = trCol[o + 2] = trCol[o + 3] = trCol[o + 4] = trCol[o + 5] = 0; continue; }
+    b.vy -= 9.81 * dt;                                         // 重力下坠
+    let sp = Math.hypot(b.vx, b.vy, b.vz);
+    const drag = Math.exp(-0.0011 * sp * dt); b.vx *= drag; b.vy *= drag; b.vz *= drag; sp *= drag;   // 空气阻力
+    let remain = sp * dt;
+    const dx = b.vx / sp, dy = b.vy / sp, dz = b.vz / sp, sx = b.x, sy = b.y, sz = b.z;
+    for (let guard = 0; guard < 4 && b.on && remain > 0; guard++) {
+      const wh = raycastWorld(b.x, b.y, b.z, dx, dy, dz, remain);
+      let tHit = wh ? wh.t : remain, victim = null, head = false, zone = 1;
+      for (let k = 0; k < fighters.length; k++) {
+        const e = fighters[k];
+        if (e === b.owner || e === b.skip || !e.alive || e.team === b.owner.team) continue;
+        const t = rayFighter(b.x, b.y, b.z, dx, dy, dz, e);
+        if (t >= 0 && t < tHit) { tHit = t; victim = e; head = rfHead; zone = rfZone; }
+      }
+      // 从玩家耳边擦过
+      if (!b.whiz && player.alive && victim !== player && b.owner.team !== player.team && time >= whizT) {
+        const px = player.x - b.x, py = player.y + player.eyeH - b.y, pz = player.z - b.z, tt = px * dx + py * dy + pz * dz;
+        if (tt > 0 && tt < tHit && b.dist + tt > 3) { const qx = px - dx * tt, qy = py - dy * tt, qz = pz - dz * tt; if (qx * qx + qy * qy + qz * qz < 2.2) { b.whiz = true; whizT = time + 0.1; whizSound(clamp(-(qx * Math.cos(player.yaw) - qz * Math.sin(player.yaw)), -1, 1)); } }
+      }
+      b.x += dx * tHit; b.y += dy * tHit; b.z += dz * tHit; b.dist += tHit; remain -= tHit;
+      const w = b.w;
+      if (victim) {
+        puff(b.x, b.y, b.z, 0x9a0c0c, 0.28, 0.28);
+        hurt(victim, b.dmg * zone * Math.max(0.3, 1 - w.fall * b.dist / 100), b.owner, head, w);
+        if (w.pen > 0 && b.dmg > w.dmg * 0.3) { b.skip = victim; b.dmg *= 0.55; b.x += dx * 0.05; b.y += dy * 0.05; b.z += dz * 0.05; }   // 步枪弹穿过人体
+        else b.on = false;
+      } else if (wh) {
+        impactFx(b.x, b.y, b.z, wh.nx, wh.ny, wh.nz, true);
+        // 穿透：木箱 / 集装箱可被步枪和狙击枪打穿，墙体不行
+        const h = cellH(Math.floor((b.x + dx * 0.02) / CELL), Math.floor((b.z + dz * 0.02) / CELL));
+        let through = 0;
+        if (w.pen > 0 && h > 0 && h < WALL_H) {
+          for (let t = 0.15; t <= w.pen; t += 0.15) if (!insideSolid(b.x + dx * t, b.y + dy * t, b.z + dz * t)) { through = t; break; }
+        }
+        if (through > 0 && b.y + dy * through > 0.02) {
+          b.x += dx * through; b.y += dy * through; b.z += dz * through; b.dist += through; remain -= through;
+          b.dmg *= 1 - 0.65 * through / w.pen; const k = 1 - 0.4 * through / w.pen; b.vx *= k; b.vy *= k; b.vz *= k;
+          impactFx(b.x, b.y, b.z, dx, dy, dz, true);
+        } else b.on = false;
+      }
+      if (b.dist > 260 || b.y < -1) b.on = false;
+    }
+    // 曳光：从上一帧位置画到当前位置；刚出膛时从枪口位置过渡
+    const k0 = Math.max(0, 1 - (b.dist - (b.x - sx) * dx - (b.y - sy) * dy - (b.z - sz) * dz) / 12), k1 = Math.max(0, 1 - b.dist / 12);
+    trPos[o] = sx + b.ox * k0; trPos[o + 1] = sy + b.oy * k0; trPos[o + 2] = sz + b.oz * k0;
+    trPos[o + 3] = b.x + b.ox * k1; trPos[o + 4] = b.y + b.oy * k1; trPos[o + 5] = b.z + b.oz * k1;
+    const c = b.tr ? 1 : 0.35;
+    trCol[o] = trCol[o + 3] = c; trCol[o + 1] = trCol[o + 4] = c * 0.9; trCol[o + 2] = trCol[o + 5] = c * 0.6;
+    if (b.on) bulletsOn++;
+  }
+  trGeo.attributes.position.needsUpdate = true; trGeo.attributes.color.needsUpdate = true;
+  tracerMesh.visible = true;
+}
 function fireWeapon(f, dir, w, spread) {
   const ox = f.x, oy = f.y + f.eyeH, oz = f.z;
   f.lastShot = time;
   let mx, my, mz;
-  if (f.isPlayer) { const rx = Math.cos(f.yaw), rz = -Math.sin(f.yaw); mx = ox + rx * 0.16 + dir.x * 0.7; my = oy - 0.13 + dir.y * 0.7; mz = oz + rz * 0.16 + dir.z * 0.7; }
+  if (f.isPlayer) { const rx = Math.cos(f.yaw), rz = -Math.sin(f.yaw), side = 0.16 * (1 - ads); mx = ox + rx * side + dir.x * 0.7; my = oy - 0.13 * (1 - ads) - 0.03 + dir.y * 0.7; mz = oz + rz * side + dir.z * 0.7; }
   else { f.rig.muzzle(_mz); mx = _mz.x; my = _mz.y; mz = _mz.z; }
   _base.copy(dir);
   const n = w.pellets || 1;
+  f.shotN = (f.shotN || 0) + 1;
   for (let i = 0; i < n; i++) {
     const d = spreadDir(_base, spread, false);
-    const wh = raycastWorld(ox, oy, oz, d.x, d.y, d.z, 300);
-    let tHit = wh ? wh.t : 300, victim = null, head = false;
-    for (let k = 0; k < fighters.length; k++) {
-      const e = fighters[k];
-      if (e === f || !e.alive || e.team === f.team) continue;
-      const t = rayFighter(ox, oy, oz, d.x, d.y, d.z, e);
-      if (t >= 0 && t < tHit) { tHit = t; victim = e; head = rfHead; }
-    }
-    const ex = ox + d.x * tHit, ey = oy + d.y * tHit, ez = oz + d.z * tHit;
-    if (victim) {
-      puff(ex, ey, ez, 0x9a0c0c, 0.28, 0.28);
-      hurt(victim, w.dmg * (head ? 3 : 1) * (1 - Math.min(0.3, tHit / 250)), f, head, w);
-    } else if (wh) { decal(ex, ey, ez, wh.nx, wh.ny, wh.nz); if (i < 3) {
-        puff(ex + wh.nx * 0.06, ey + wh.ny * 0.06, ez + wh.nz * 0.06, 0xcdbd9c, 0.3, 0.35);
-        for (let k = 0; k < 3; k++) particle(ex + wh.nx * 0.03, ey + wh.ny * 0.03, ez + wh.nz * 0.03, wh.nx * rand(0.5, 2.5) + rand(-1.2, 1.2), wh.ny * rand(0.5, 2.5) + rand(0.2, 2.2), wh.nz * rand(0.5, 2.5) + rand(-1.2, 1.2), rand(0.35, 0.7), rand(0.012, 0.03), rand(0.012, 0.03), 0x8a7a62);
-      } }
-    // 子弹从玩家耳边擦过的呼啸声
-    if (!f.isPlayer && player.alive && victim !== player && f.team !== player.team && time >= whizT) {
-      const px = player.x - ox, py = player.y + player.eyeH - oy, pz = player.z - oz, tt = px * d.x + py * d.y + pz * d.z;
-      if (tt > 2 && tt < tHit) { const qx = px - d.x * tt, qy = py - d.y * tt, qz = pz - d.z * tt; if (qx * qx + qy * qy + qz * qz < 2.2) { whizT = time + 0.12; whizSound(clamp(-(qx * Math.cos(player.yaw) - qz * Math.sin(player.yaw)), -1, 1)); } }
-    }
-    if (i < 4) tracer(mx, my, mz, ex, ey, ez);
+    const b = bullets[bulletI++ % BN], v = w.v * rand(0.97, 1.03);
+    b.on = true; b.x = ox; b.y = oy; b.z = oz; b.vx = d.x * v; b.vy = d.y * v; b.vz = d.z * v;
+    b.ox = mx - ox - d.x * 0.7; b.oy = my - oy - d.y * 0.7; b.oz = mz - oz - d.z * 0.7;
+    b.dist = 0; b.dmg = w.dmg; b.w = w; b.owner = f; b.skip = null; b.whiz = false;
+    b.tr = n > 1 ? i < 3 : (w.auto ? f.shotN % 3 === 0 : true);     // 连发武器每三发一发曳光弹
   }
+  bulletsOn = 1;
   { // 抛壳
     const rx = Math.cos(f.yaw), rz = -Math.sin(f.yaw), sh = w.pellets ? 0xa02a20 : 0xc9a24a;
     particle(mx - dir.x * 0.45 + rx * 0.05, my + 0.03, mz - dir.z * 0.45 + rz * 0.05, rx * rand(1.2, 2.2) + f.vx, rand(1.6, 2.6), rz * rand(1.2, 2.2) + f.vz, 1.6, w.pellets ? 0.016 : 0.009, w.pellets ? 0.05 : 0.026, sh);
@@ -410,7 +473,7 @@ function fireWeapon(f, dir, w, spread) {
   if (f.isPlayer) shotSound(w.id, 0, 0);
   else {
     const dx = f.x - camera.position.x, dz = f.z - camera.position.z, dist = Math.hypot(dx, dz) || 1;
-    shotSound(w.id, dist, clamp((dx * Math.cos(camera.rotation.y) - dz * Math.sin(camera.rotation.y)) / dist, -1, 1) * 0.8);
+    shotSound(w.id, dist, clamp((dx * Math.cos(camera.rotation.y) - dz * Math.sin(camera.rotation.y)) / dist, -1, 1) * 0.8, dist / 343);
     const bf = botFlashes[botFlashI++ % botFlashes.length];
     bf.s.position.set(mx, my, mz); bf.s.scale.setScalar(rand(0.35, 0.55) * (w.pellets ? 1.5 : 1)); bf.s.material.rotation = Math.random() * 6.28; bf.life = 0.05; bf.s.visible = true;
   }
@@ -484,7 +547,7 @@ function takeItem(f, it) {
     f.inv[0] = it.id; f.ammo[it.id] = { mag: it.mag, res: it.res };
     if (f.isPlayer) { const ls = f.cur === 0 ? lastSlot : f.cur; f.cur = -1; switchTo(0); lastSlot = ls; }
     else { f.cur = 0; f.reloadEnd = 0; f.rig.setGun(it.id); }
-  } else { const a = f.ammo.pistol; a.res = Math.min(W.pistol.res, a.res + it.mag + it.res); }
+  } else { const a = f.ammo.pistol; a.res = Math.min(W.pistol.max, a.res + it.mag + it.res); }
   if (f.isPlayer) beep(650, 0.06, 0.14, 'triangle');
 }
 function itemNear(f, it, r) { const o = it.obj.position; return Math.abs(o.x - f.x) < r && Math.abs(o.z - f.z) < r && Math.abs(o.y - f.y) < 1.6; }
@@ -498,7 +561,7 @@ function updateItems(dt) {
       const it = items[i]; if (!itemNear(p, it, 1.5)) { it.noAuto = false; continue; }
       const w = W[it.id];
       if (w.slot === 0 && !p.inv[0] && !it.noAuto) { takeItem(p, it); continue; }           // 没有主武器：自动拾取
-      if (w.slot === 1) { if (p.ammo.pistol.res < W.pistol.res) takeItem(p, it); continue; }   // 手枪：补充弹药
+      if (w.slot === 1) { if (p.ammo.pistol.res < W.pistol.max) takeItem(p, it); continue; }   // 手枪：补充弹药
       const d = Math.hypot(it.obj.position.x - p.x, it.obj.position.z - p.z);
       if (d < bd) { bd = d; nearItem = it; }
     }
@@ -516,6 +579,7 @@ const keys = {};
 let mouseDown = false, firePressed = false, locked = false, paused = false, scoped = false;
 let sens = 1, lastSlot = 1, buyOpen = false, boardOpen = false;
 let punchP = 0, punchY = 0, vmKick = 0, vmSwitch = 0, bob = 0, flashT = 0, dmgFlash = 0, hitT = 0, hitHS = false;
+const semi = {};
 let specTarget = null, dirT = 0, kcT = 0, whizT = 0, rmb = false, ads = 0, swayX = 0, swayY = 0, vmDip = 0, wasGround = true;
 try { sens = parseFloat(localStorage.getItem('dbo_sens')) || 1; } catch (e) {}
 $('sens').value = sens;
@@ -544,12 +608,12 @@ function buy(item) {
     if (player.money < price) return broke();
     player.armor = 100;
   } else if (item.ammo) {
-    // 补满所有枪的弹匣和备弹（以前只看备弹，弹匣打空但备弹满时买不了）
+    // 把所有枪的弹匣装满、备弹补到携带上限
     let need = false;
-    for (const id of player.inv) if (id && !W[id].melee && (player.ammo[id].res < W[id].res || player.ammo[id].mag < W[id].mag)) need = true;
-    if (!need) return toast('弹药已满');
+    for (const id of player.inv) if (id && !W[id].melee && (player.ammo[id].res < W[id].max || player.ammo[id].mag < W[id].mag)) need = true;
+    if (!need) return toast('弹药已满（备弹已达携带上限）');
     if (player.money < price) return broke();
-    for (const id of player.inv) if (id && !W[id].melee) { player.ammo[id].res = W[id].res; player.ammo[id].mag = W[id].mag; }
+    for (const id of player.inv) if (id && !W[id].melee) { const a = player.ammo[id]; a.res = W[id].max; a.mag = Math.max(a.mag, W[id].mag); }
     player.reloadEnd = 0;
   }
   player.money -= price; beep(900, 0.08, 0.15, 'triangle');
@@ -569,6 +633,7 @@ addEventListener('keydown', (e) => {
   else if (/^Digit[1-3]$/.test(e.code)) switchTo(+e.code.slice(5) - 1);
   else if (e.code === 'KeyQ') switchTo(lastSlot);
   else if (e.code === 'KeyR') startReload(player);
+  else if (e.code === 'KeyV') { const w = curW(player); if (w.auto) { semi[w.id] = !semi[w.id]; sndClick(); toast(semi[w.id] ? '射击模式：单发' : '射击模式：连发'); } }
   else if (e.code === 'KeyE') { if (nearItem) takeItem(player, nearItem); }
   else if (e.code === 'KeyG') { if (player.inv[0]) { dropLoose(player); if (player.cur === 0) { player.cur = -1; switchTo(1); } lastSlot = 1; } }
 });
@@ -639,7 +704,8 @@ function updatePlayer(dt) {
 
   if (p.reloadEnd && time >= p.reloadEnd) finishReload(p, w);
   if (time - p.lastShot > w.rate * 1.6) p.heat = Math.max(0, p.heat - dt * 9);
-  const want = mouseDown && (w.auto || firePressed) && !buyOpen;
+  const want = mouseDown && ((w.auto && !semi[w.id]) || firePressed) && !buyOpen;
+  if (want && w.shell && p.reloadEnd && p.ammo[w.id].mag > 0) p.reloadEnd = 0;   // 开火打断装填
   firePressed = false;
   if (want && act && time >= p.nextFire && !p.reloadEnd) {
     camera.getWorldDirection(_fwd);
@@ -660,7 +726,10 @@ function updatePlayer(dt) {
         if (p.crouch) s *= 0.7;
         fireWeapon(p, _fwd, w, s);
         p.heat = Math.min(12, p.heat + 1);
-        punchP += w.kick * (0.7 + Math.min(p.heat, 8) * 0.07); punchY += rand(-1, 1) * w.kick * 0.35;
+        // 后坐力轨迹：前几发主要上跳，之后左右摆动（可以学着压枪）
+        const n = p.heat, kk = w.kick * (1 - 0.35 * ads) * (p.crouch ? 0.8 : 1);
+        punchP += kk * (n < 9 ? 0.75 + n * 0.06 : 0.45);
+        punchY += kk * (n < 3 ? rand(-0.12, 0.12) : Math.sin((n - 3) * 0.55) * 0.55 + rand(-0.1, 0.1));
         vmKick = 1; flashT = 0.045;
         flash.rotation.z = Math.random() * 6; flash.scale.setScalar(rand(0.8, 1.3) * (w.id === 'shotgun' || w.id === 'sniper' ? 1.6 : 1));
         if (w.scope) scoped = false;
@@ -776,7 +845,8 @@ function updateBot(b, dt) {
         b.burst--; a.mag--;
         b.nextFire = time + (w.auto ? w.rate : w.rate * rand(1.6, 3));
         if (b.burst === 0) b.pauseT = w.auto ? rand(0.25, 0.6) : 0;
-        _aim.set(dx, dy, dz).normalize();
+        const ft = dist / w.v;   // 提前量 + 弹道下坠补偿
+        _aim.set(dx + t.vx * ft, dy + 4.9 * ft * ft, dz + t.vz * ft).normalize();
         const err = diff.err * (1 + Math.hypot(t.vx, t.vz) * 0.1) * (w.id === 'sniper' ? 0.5 : 1) * (b.crouch ? 0.75 : 1) * (b.onGround ? 1 : 2);
         _aim.copy(spreadDir(_aim, err, true));
         fireWeapon(b, _aim, w, w.spread);
@@ -815,7 +885,7 @@ function updateBot(b, dt) {
   moveFighter(b, mx * dt, mz * dt, dt);
 }
 function botBuy(b) {
-  if (b.inv[0]) { const a = b.ammo[b.inv[0]]; a.mag = W[b.inv[0]].mag; a.res = W[b.inv[0]].res; }
+  if (b.inv[0]) { const a = b.ammo[b.inv[0]]; a.mag = W[b.inv[0]].mag; a.res = W[b.inv[0]].max; }
   else {
     const opts = [];
     if (b.money >= 4500 + 650 && Math.random() < 0.15) opts.push('sniper');
@@ -850,7 +920,7 @@ function startRound() {
     }
     aliveN[team] = i;
   }
-  decalI = 0; decalMesh.count = 0; clearItems();
+  decalI = 0; decalMesh.count = 0; clearItems(); for (const b of bullets) b.on = false;
   scoped = false; buyOpen = false; specTarget = null; punchP = punchY = 0; ads = 0; rmb = false;
   setMsg(`第 ${roundNo} 回合`, '按 B 购买装备', FREEZE_TIME);
 }
@@ -954,7 +1024,9 @@ function renderBuy() {
     const price = it.w ? W[it.w].price : it.price, name = it.w ? W[it.w].name : it.name;
     h += `<div class="it${player.money < price ? ' no' : ''}"><span><b>${it.key}</b>${name}</span><span>$${price}</span></div>`;
   }
-  return h + '<p>按数字键购买，按 B 关闭。仅回合开始阶段可购买。</p>';
+  let am = '';
+  for (const id of player.inv) if (id && !W[id].melee) am += `　${W[id].name.split(' ')[1] || W[id].name}：弹匣 ${player.ammo[id].mag}/${W[id].mag}，备弹 ${player.ammo[id].res}/${W[id].max}`;
+  return h + `<p>当前弹药${am}</p><p>按数字键购买，按 B 关闭。仅回合开始阶段可购买。</p>`;
 }
 function renderBoard() {
   let h = '';
@@ -970,9 +1042,9 @@ let panelT = 0, panelKey = '';
 function updateHUD(dt) {
   const p = player, w = curW(p);
   setText('hp', Math.max(0, p.hp)); setText('armor', p.armor); setText('money', '$' + p.money);
-  setText('wname', p.reloadEnd ? w.name + '　换弹中…' : w.name);
-  if (w.melee) { setText('mag', '—'); setText('res', ''); }
-  else { setText('mag', p.ammo[w.id].mag); setText('res', '/ ' + p.ammo[w.id].res); }
+  setText('wname', (w.auto ? (semi[w.id] ? '[单发] ' : '[连发] ') : '') + w.name + (p.reloadEnd ? '　换弹中…' : ''));
+  if (w.melee) { setText('mag', '—'); setText('res', ''); setText('resmax', ''); }
+  else { setText('mag', p.ammo[w.id].mag); setText('res', '/ ' + p.ammo[w.id].res); setText('resmax', '备弹上限 ' + w.max); }
   const tt = Math.max(0, Math.ceil(state === 'freeze' ? freezeT : roundT));
   if (hudCache.tt !== tt) { hudCache.tt = tt; $('timer').textContent = `${(tt / 60) | 0}:${String(tt % 60).padStart(2, '0')}`; }
   setText('scoreBlue', score.blue); setText('scoreRed', score.red);
@@ -995,7 +1067,7 @@ function updateHUD(dt) {
   panelT -= dt;
   if (panelT <= 0) {
     panelT = 0.2;
-    if (buyOpen) { const k = 'b' + p.money; if (k !== panelKey) { panelKey = k; $('buy').innerHTML = renderBuy(); } }
+    if (buyOpen) { const k = 'b' + p.money + p.inv.map((id) => (id && p.ammo[id] ? p.ammo[id].mag + '.' + p.ammo[id].res : '')).join('|'); if (k !== panelKey) { panelKey = k; $('buy').innerHTML = renderBuy(); } }
     else panelKey = '';
     if (boardOpen) $('board').innerHTML = renderBoard();
   }
@@ -1029,17 +1101,6 @@ function updateMeshes(dt) {
       f.blob.rotation.y = f.yaw; f.blob.scale.set(1.1 + 0.2 * f.deathT, 1, 1.1 + 1.2 * f.deathT);
     }
   }
-  if (tracersActive > 0) {
-    let any = false;
-    for (let i = 0; i < TR_N; i++) {
-      let l = trLife[i]; if (l > 0) { l = trLife[i] = l - dt; any = any || l > 0; }
-      const c = l > 0 ? l / 0.07 : 0, o = i * 6;
-      trCol[o] = trCol[o + 3] = c; trCol[o + 1] = trCol[o + 4] = c * 0.9; trCol[o + 2] = trCol[o + 5] = c * 0.6;
-    }
-    trGeo.attributes.position.needsUpdate = true; trGeo.attributes.color.needsUpdate = true;
-    if (!any) tracersActive--;
-  }
-  tracerMesh.visible = tracersActive > 0;
   for (let i = 0; i < puffs.length; i++) {
     const p = puffs[i]; if (p.life <= 0) continue;
     p.life -= dt; const k = 1 - p.life / p.max;
@@ -1077,7 +1138,7 @@ function updateCamera(dt) {
     vmKick = Math.max(0, vmKick - dt * 9); vmSwitch = Math.max(0, vmSwitch - dt * 4);
     const hs = Math.hypot(p.vx, p.vz) / RUN;
     let rl = 0;
-    if (p.reloadEnd) { const w = W[id], k = 1 - (p.reloadEnd - time) / w.reload; rl = Math.sin(Math.min(1, k) * Math.PI); }
+    if (p.reloadEnd) { const k = 1 - (p.reloadEnd - time) / (p.reloadDur || 1); rl = Math.sin(Math.min(1, k) * Math.PI); }
     const melee = id === 'knife', long = GUN[id].long;
 const sd = Math.exp(-9 * dt); swayX *= sd; swayY *= sd; vmDip = Math.max(0, vmDip - dt * 4.5);
     const k = ads * ads * (3 - 2 * ads), bk = 1 - 0.8 * k, G = GUN[id];
@@ -1115,7 +1176,7 @@ function frame(now) {
     if (state !== 'matchEnd') {
       if (player.alive) updatePlayer(dt);
       for (let i = 0; i < fighters.length; i++) { const f = fighters[i]; if (!f.isPlayer && f.alive) updateBot(f, dt); }
-      updateItems(dt); updateMeshes(dt); updateCamera(dt); updateHUD(dt);
+      updateBullets(dt); updateItems(dt); updateMeshes(dt); updateCamera(dt); updateHUD(dt);
     }
   } else if (state === 'menu') {
     const a = now / 9000;
