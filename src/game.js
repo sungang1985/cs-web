@@ -420,7 +420,7 @@ function fireWeapon(f, dir, w, spread) {
     if (b.isPlayer || !b.alive || b.team === f.team || b.target || time < b.hearT) continue;
     if (Math.abs(b.x - f.x) + Math.abs(b.z - f.z) < 55) {
       b.hearT = time + rand(1.5, 2.5);
-      if (Math.random() < 0.6) { b.look = { x: f.x, z: f.z, until: time + 1.5 }; goTo(b, f.x, f.z, Math.random() < 0.4); }
+      if (Math.random() < 0.6) { b.look = { x: f.x, z: f.z, until: time + 1.5 }; goTo(b, f.x, f.z, Math.random() < 0.12); }
     }
   }
 }
@@ -446,7 +446,7 @@ function kill(v, att, head, w) {
   if (v === player) {
     scoped = false; buyOpen = false; specTarget = null;
     rig.root.visible = true; rig.setGun(v.inv[0] || 'pistol');
-    rig.aim = 1; rig.cr = v.crouch ? 1 : 0; rig.update(0.016, v.x, v.y, v.z, v.yaw, 0, true, v.pitch, v.crouch, false);
+    rig.aim = 1; rig.cr = v.crouch ? 1 : 0; rig.update(0.016, v.x, v.y, v.z, v.yaw, 0, 0, 0, true, v.pitch, v.crouch, false, false);
   }
   // 倒地方向：正面中弹向后仰，背后中弹向前扑；并检查该方向是否有空间
   const fx = -Math.sin(v.yaw), fz = -Math.cos(v.yaw);
@@ -668,7 +668,7 @@ function goTo(b, x, z, sneak = false) {
     if (!found) return;
   }
   const p = findPath(Math.floor(b.x / CELL), Math.floor(b.z / CELL), gx, gz, 0.6, true);
-  if (p) { b.sneak = sneak; b.path = p; b.pi = 1; b.stuckT = 0; b.sx = b.x; b.sz = b.z; }
+  if (p) { b.sneak = sneak; b.sneakC = sneak && Math.random() < 0.3; b.path = p; b.pi = 1; b.stuckT = 0; b.sx = b.x; b.sz = b.z; }
 }
 function pickGoal(b) {
   // 残局或回合后半段：主动搜索敌人的大致位置，避免双方互相错过
@@ -679,12 +679,12 @@ function pickGoal(b) {
   if ((aliveN[foe] <= 2 || roundT < ROUND_TIME - 30) && Math.random() < 0.75) {
     let best = null, bd = 1e9;
     for (const e of fighters) { if (!e.alive || e.team !== foe) continue; const d = Math.abs(e.x - b.x) + Math.abs(e.z - b.z) + Math.random() * 20; if (d < bd) { bd = d; best = e; } }
-    if (best) { goTo(b, best.x + rand(-4, 4), best.z + rand(-4, 4), bd < 30 && Math.random() < 0.5); if (b.path && b.path.length > 9) b.path.length = 9; return; }
+    if (best) { goTo(b, best.x + rand(-4, 4), best.z + rand(-4, 4), bd < 16 && Math.random() < 0.3); if (b.path && b.path.length > 9) b.path.length = 9; return; }
   }
   const r = Math.random();
   if (r < 0.5) { const s = spawns[b.team === 'blue' ? 'red' : 'blue'][(Math.random() * 6) | 0]; goTo(b, s.x, s.z); }
   else if (r < 0.7) goTo(b, GW * CELL / 2 + rand(-8, 8), GH * CELL / 2 + rand(-8, 8));
-  else goTo(b, rand(2, GW * CELL - 2), rand(2, GH * CELL - 2), Math.random() < 0.3);
+  else goTo(b, rand(2, GW * CELL - 2), rand(2, GH * CELL - 2), Math.random() < 0.06);
 }
 function canSee(a, b) {
   const ox = a.x, oy = a.y + a.eyeH, oz = a.z;
@@ -717,12 +717,12 @@ function updateBot(b, dt) {
     if (best) {
       if (b.target !== best) { b.react = diff.react * rand(0.7, 1.4); b.burst = 0; b.pauseT = 0; }
       b.target = best; b.lastSeen = { x: best.x, z: best.z };
-    } else if (b.target) { b.target = null; b.crouch = false; if (b.lastSeen) goTo(b, b.lastSeen.x, b.lastSeen.z, Math.random() < 0.5); }
+    } else if (b.target) { b.target = null; b.crouch = false; if (b.lastSeen) goTo(b, b.lastSeen.x, b.lastSeen.z, Math.random() < 0.2); }
     else if (time >= b.hearT) {   // 听脚步：附近有敌人在跑动（静步/蹲行听不到）
       for (let k = 0; k < fighters.length; k++) {
         const e = fighters[k];
         if (!e.alive || e.team === b.team || e.crouch || !e.onGround) continue;
-        if (Math.abs(e.x - b.x) + Math.abs(e.z - b.z) < 11 && e.vx * e.vx + e.vz * e.vz > 12) { b.hearT = time + 2; b.look = { x: e.x, z: e.z, until: time + 1.8 }; goTo(b, e.x, e.z, true); break; }
+        if (Math.abs(e.x - b.x) + Math.abs(e.z - b.z) < 11 && e.vx * e.vx + e.vz * e.vz > 12) { b.hearT = time + 2; b.look = { x: e.x, z: e.z, until: time + 1.8 }; goTo(b, e.x, e.z, Math.random() < 0.5); break; }
       }
     }
   }
@@ -769,14 +769,14 @@ function updateBot(b, dt) {
       }
     }
   } else {
-    b.aimPitch = 0; b.crouch = false;
+    b.aimPitch = 0; b.crouch = !!(b.sneak && b.sneakC && b.onGround);   // 部分静步改为蹲行
     if (!b.reloadEnd && !w.melee && b.ammo[w.id].mag < w.mag * 0.4) startReload(b);
     if (!b.path || b.pi >= b.path.length) pickGoal(b);
     if (b.path && b.pi < b.path.length) {
       const wp = b.path[b.pi], dx = wp.x - b.x, dz = wp.z - b.z, d = Math.hypot(dx, dz);
       if (d < 0.45) b.pi++;
       else {
-        const sp2 = b.sneak ? speed * 0.5 : speed;   // 静步接近
+        const sp2 = b.crouch ? speed * 0.42 : b.sneak ? speed * 0.5 : speed;   // 默认奔跑；静步 / 蹲行接近
         mx = dx / d * sp2; mz = dz / d * sp2;
         // 前方是矮箱：起跳
         if (b.onGround && cellH(Math.floor(wp.x / CELL), Math.floor(wp.z / CELL)) > b.y + 0.1 && d < 1.9) { b.vy = JUMP_V; b.onGround = false; }
@@ -998,7 +998,7 @@ function updateMeshes(dt) {
       f.blob.visible = !f.isPlayer;
       if (f.isPlayer) continue;
       const sp = Math.hypot(f.vx, f.vz);
-      rig.update(dt, f.x, f.y, f.z, f.yaw, sp, !!f.target || time - f.lastShot < 1.2, f.aimPitch, f.crouch, !f.onGround);
+      rig.update(dt, f.x, f.y, f.z, f.yaw, f.vx, f.vz, f.vy, !!f.target || time - f.lastShot < 1.2, f.aimPitch, f.crouch, !f.onGround, f.sneak && !f.target);
       if (sp > 3.5 && f.onGround && !f.crouch && (f.stepD += sp * dt) > 2.3) {   // 跑动脚步声
         f.stepD = 0;
         const dx = f.x - camera.position.x, dz = f.z - camera.position.z, dist = Math.hypot(dx, dz) || 1;

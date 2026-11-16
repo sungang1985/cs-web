@@ -247,8 +247,10 @@ function soldierGeos(team) {
 }
 
 const POSE = {
-  long:   { aimP: new THREE.Vector3(0.085, 0.385, -0.02), aimQ: new THREE.Quaternion(), lowP: new THREE.Vector3(0.1, 0.22, -0.06), lowQ: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.55, 0.45, 0.12, 'YXZ')), twA: -0.6, twL: -0.3 },
-  pistol: { aimP: new THREE.Vector3(0.0, 0.43, -0.5), aimQ: new THREE.Quaternion(), lowP: new THREE.Vector3(0.02, 0.13, -0.3), lowQ: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.85, 0.1, 0, 'YXZ')), twA: 0, twL: 0 },
+  long:   { aimP: new THREE.Vector3(0.085, 0.385, -0.02), aimQ: new THREE.Quaternion(), lowP: new THREE.Vector3(0.1, 0.22, -0.06), lowQ: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.55, 0.45, 0.12, 'YXZ')), twA: -0.6, twL: -0.3,
+            runP: new THREE.Vector3(0.04, 0.27, -0.13), runQ: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5, 0.95, 0.25, 'YXZ')) },
+  pistol: { aimP: new THREE.Vector3(0.0, 0.43, -0.5), aimQ: new THREE.Quaternion(), lowP: new THREE.Vector3(0.02, 0.13, -0.3), lowQ: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.85, 0.1, 0, 'YXZ')), twA: 0, twL: 0,
+            runP: new THREE.Vector3(0.1, 0.2, -0.27), runQ: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.2, 0.35, 0, 'YXZ')) },
 };
 const SH = [new THREE.Vector3(0.2, 0.38, 0), new THREE.Vector3(-0.2, 0.38, 0)];
 const POLE = [new THREE.Vector3(0.55, -1, 0.25), new THREE.Vector3(-0.7, -0.9, 0.1)];
@@ -285,13 +287,13 @@ export class Soldier {
     for (const id of ['pistol', 'smg', 'rifle', 'shotgun', 'sniper']) {
       const m = new THREE.Mesh(gunGeo(id), gunMat); m.visible = false; this.holder.add(m); this.guns[id] = m;
     }
-    this.gunId = 'pistol'; this.aim = 0; this.cr = 0; this.ab = 0; this.phase = Math.random() * 6; this.sf = 0; this.death = null; this.drop = null;
+    this.gunId = 'pistol'; this.aim = 0; this.cr = 0; this.ab = 0; this.rn = 0; this.fw = 1; this.rt = 0; this.land = 0; this.wasAir = false; this.vyPrev = 0; this.phase = Math.random() * 6; this.sf = 0; this.death = null; this.drop = null;
     scene.add(this.root);
   }
   dispose() { this.scene.remove(this.root); this.scene.remove(this.holder); }
   setGun(id) { this.gunId = id; for (const k in this.guns) this.guns[k].visible = k === id; }
   reset() {
-    this.death = null; this.drop = null; this.aim = 0; this.cr = 0; this.ab = 0; this.holder.visible = true;
+    this.death = null; this.drop = null; this.aim = 0; this.cr = 0; this.ab = 0; this.rn = 0; this.land = 0; this.wasAir = false; this.upper.rotation.set(0, 0, 0); this.holder.visible = true;
     this.anchor.add(this.holder); this.holder.position.set(0, 0, 0); this.holder.quaternion.identity(); this.holder.scale.setScalar(1);
     this.hips.position.set(0, HIP_Y, 0); this.hips.rotation.set(0, 0, 0);
     this.head.rotation.set(0, 0, 0); this.upper.rotation.set(0, 0, 0);
@@ -301,34 +303,54 @@ export class Soldier {
     return out.set(0, g.mv, g.mz).applyMatrix4(this.holder.matrixWorld);
   }
   // 存活状态：持枪 IK + 行走
-  update(dt, x, y, z, yaw, speed, aiming, pitch, crouch, air) {
+  // 存活状态动画：站立 / 奔跑 / 静步 / 蹲姿与蹲行 / 起跳、下落、落地，再叠加持枪 IK
+  update(dt, x, y, z, yaw, vx, vz, vy, aiming, pitch, crouch, air, sneak) {
     this.root.position.set(x, y, z); this.root.rotation.set(0, yaw, 0);
-    const g = GUN[this.gunId], P = g.long ? POSE.long : POSE.pistol;
-    this.aim += ((aiming ? 1 : 0) - this.aim) * (1 - Math.exp(-(aiming ? 14 : 5) * dt));
-    const a = this.aim, sf = (this.sf += (Math.min(1, speed / 4.5) - this.sf) * (1 - Math.exp(-10 * dt)));
-    const c = (this.cr += ((crouch ? 1 : 0) - this.cr) * (1 - Math.exp(-11 * dt)));
-    const ab = (this.ab += ((air ? 1 : 0) - this.ab) * (1 - Math.exp(-(air ? 16 : 10) * dt)));
-    this.phase += speed * dt * (2.1 + 1.2 * c);
-    const ph = this.phase, sn = Math.sin(ph), cs = Math.cos(ph);
-    // 腿：站立/行走、蹲姿（单膝跪）、腾空（收腿）三种姿势混合
-    const sw = (1 - c) * (1 - ab), jb = ab * (1 - c), amp = 0.62 * sf * (1 - 0.6 * c) * (1 - ab);
-    this.th[0].rotation.x = sn * amp + (0.26 * a * (1 - sf) + 0.04) * sw + 1.35 * c + 0.6 * jb;
-    this.th[1].rotation.x = -sn * amp - (0.2 * a * (1 - sf) + 0.02) * sw + 0.25 * c + 0.15 * jb;
-    this.th[0].rotation.z = 0.035 + 0.08 * c; this.th[1].rotation.z = -0.035 - 0.12 * c;
-    this.kn[0].rotation.x = -(Math.max(0, cs) * sf + 0.3 * a * (1 - sf) + 0.06) * sw - 2.2 * c - 1.05 * jb;
-    this.kn[1].rotation.x = -(Math.max(0, -cs) * sf + 0.2 * a * (1 - sf) + 0.06) * sw - 1.9 * c - 0.55 * jb;
-    this.hips.position.set(0, HIP_Y - (0.035 * a * (1 - sf) + 0.012 - Math.abs(cs) * 0.03 * sf + 0.02 * sf) * sw - 0.5 * c + Math.abs(sn) * 0.02 * sf * c, 0);
-    this.hips.rotation.set(0, sn * 0.06 * sf * (1 - c), 0);
-    // 上身
-    const tw = lerp(P.twL, P.twA, a);
-    this.upper.rotation.x = clamp(pitch, -0.7, 0.7) * a - 0.1 * sf * (1 - a) - 0.03 - 0.14 * c * (1 - a) - 0.04 * c + 0.08 * jb;
-    this.chest.rotation.y = tw - sn * 0.05 * sf;
-    this.head.rotation.set(0.06 * a + 0.1 * c * (1 - a), -tw * 0.9, g.long ? -0.2 * a : 0);
-    // 武器位置
-    const an = this.anchor;
-    an.position.lerpVectors(P.lowP, P.aimP, a); an.quaternion.slerpQuaternions(P.lowQ, P.aimQ, a);
-    if (g.long) an.position.z -= g.butt * lerp(0.8, 1, a);
-    an.position.y += Math.sin(ph * 2) * 0.008 * sf; an.position.x += cs * 0.006 * sf;
+    const g = GUN[this.gunId], P = g.long ? POSE.long : POSE.pistol, ex = (r) => 1 - Math.exp(-r * dt);
+    const speed = Math.hypot(vx, vz);
+    // 相对朝向的移动方向：fw 前后、rt 左右（用于侧移和后退的步伐）
+    let fw = 1, rt = 0;
+    if (speed > 0.3) { fw = (-Math.sin(yaw) * vx - Math.cos(yaw) * vz) / speed; rt = (Math.cos(yaw) * vx - Math.sin(yaw) * vz) / speed; }
+    this.fw += (fw - this.fw) * ex(10); this.rt += (rt - this.rt) * ex(10); fw = this.fw; rt = this.rt;
+    const shoulder = aiming || (sneak && speed > 0.3);            // 静步时端枪警戒
+    this.aim += ((shoulder ? 1 : 0) - this.aim) * ex(shoulder ? 14 : 5);
+    const a = this.aim;
+    const c = (this.cr += ((crouch ? 1 : 0) - this.cr) * ex(11));
+    const ab = (this.ab += ((air ? 1 : 0) - this.ab) * ex(air ? 18 : 12));
+    if (this.wasAir && !air) this.land = Math.min(1, 0.35 + Math.max(0, -this.vyPrev) / 8);   // 落地缓冲
+    this.wasAir = air; this.vyPrev = vy; this.land = Math.max(0, this.land - dt * 3.2);
+    const mv = (this.sf += (Math.min(1, speed / 1.6) - this.sf) * ex(10));                       // 是否在移动
+    const rn = (this.rn += ((speed > 3.4 && !crouch ? 1 : 0) - this.rn) * ex(8));                // 奔跑权重
+    const gnd = 1 - ab, stn = (1 - c) * gnd, ck = c * (1 - mv) * gnd, cw = c * mv * gnd, jb = ab, ld = this.land * gnd;
+    this.phase += speed * dt * (lerp(3.9, 2.45, rn) + 1.6 * c);
+    const ph = this.phase, sn = Math.sin(ph), cs = Math.cos(ph), dirS = fw < -0.3 ? -1 : 1;
+    // ---- 腿 ----
+    const A = (0.36 + 0.5 * rn) * mv * (1 - 0.45 * c) * gnd, K = (0.75 + 0.8 * rn) * mv * gnd * (1 - 0.5 * c);
+    const up = clamp(vy / 5, -1, 1) * 0.5 + 0.5;                                                  // 上升 1 → 下落 0
+    const jT0 = lerp(0.3, 0.95, up), jK0 = lerp(-0.45, -1.45, up), jT1 = lerp(-0.12, 0.25, up), jK1 = lerp(-0.3, -0.95, up);
+    const idle = (1 - mv) * stn;
+    this.th[0].rotation.x = sn * A * fw + (0.26 * a + 0.04) * idle + 0.1 * rn * stn + ck * 1.35 + cw * 1.2 + jb * jT0 + ld * 0.4;
+    this.th[1].rotation.x = -sn * A * fw - (0.2 * a + 0.02) * idle + 0.1 * rn * stn + ck * 0.25 + cw * 1.2 + jb * jT1 + ld * 0.4;
+    this.th[0].rotation.z = 0.035 + 0.08 * c + sn * A * 0.5 * rt; this.th[1].rotation.z = -0.035 - 0.12 * c - sn * A * 0.5 * rt;
+    this.kn[0].rotation.x = -(Math.max(0, cs * dirS) * K + (0.3 * a + 0.06) * idle + 0.12 * mv * stn + (sneak ? 0.16 * stn : 0)) - ck * 2.2 - cw * 2.1 + jb * jK0 - ld * 0.8;
+    this.kn[1].rotation.x = -(Math.max(0, -cs * dirS) * K + (0.2 * a + 0.06) * idle + 0.12 * mv * stn + (sneak ? 0.16 * stn : 0)) - ck * 1.9 - cw * 2.1 + jb * jK1 - ld * 0.8;
+    const bob = Math.abs(cs) * (0.025 + 0.045 * rn) * mv;
+    this.hips.position.set(0, HIP_Y - (0.035 * a * (1 - mv) + 0.012 + 0.03 * mv + 0.02 * rn + (sneak ? 0.05 * mv : 0)) * stn + bob * (1 - c) * gnd - 0.5 * ck - 0.47 * cw - 0.15 * ld + 0.05 * jb * up, 0);
+    this.hips.rotation.set(0, sn * (0.07 + 0.1 * rn) * mv * (1 - c) * gnd, sn * 0.03 * rn * gnd);
+    // ---- 上身 ----
+    const tw = lerp(P.twL, P.twA, a), lean = (0.06 * mv + 0.2 * rn) * fw * stn;
+    this.upper.rotation.x = clamp(pitch, -0.7, 0.7) * a - lean * (1 - 0.55 * a) - 0.03 - (0.14 * (1 - a) + 0.04) * c - 0.12 * ld + 0.1 * jb * (up - 0.4);
+    this.upper.rotation.z = -rt * 0.07 * rn * stn;
+    this.chest.rotation.y = tw - sn * (0.05 + 0.1 * rn) * mv * gnd * (1 - 0.5 * a);
+    this.head.rotation.set(0.06 * a + 0.1 * c * (1 - a) + lean * 0.6 * (1 - a), -tw * 0.9, g.long ? -0.2 * a : 0);
+    // ---- 武器位置：低姿持枪 → 奔跑持枪（斜持于胸前）→ 抵肩瞄准 ----
+    const an = this.anchor, rr = rn * (1 - a) * (1 - c);
+    an.position.lerpVectors(P.lowP, P.runP, rr); an.quaternion.slerpQuaternions(P.lowQ, P.runQ, rr);
+    an.position.lerp(P.aimP, a); an.quaternion.slerp(P.aimQ, a);
+    if (g.long) an.position.z -= g.butt * lerp(lerp(0.8, 0.45, rr), 1, a);
+    const sw2 = mv * gnd * (1 - 0.75 * a);
+    an.position.y += Math.sin(ph * 2) * (0.008 + 0.022 * rn) * sw2 - 0.05 * ld * (1 - a); an.position.x += cs * (0.006 + 0.03 * rn) * sw2;
+    an.position.z += sn * 0.03 * rn * sw2;
     // 手臂 IK（在胸腔坐标系中求解）
     const ct = Math.cos(-this.chest.rotation.y), st = Math.sin(-this.chest.rotation.y);
     for (let i = 0; i < 2; i++) {
