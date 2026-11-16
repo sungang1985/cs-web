@@ -64,11 +64,11 @@ export const bodyMat = Q.pbr ? new THREE.MeshStandardMaterial({ vertexColors: tr
 const METAL = 0x3a3f46, METAL2 = 0x50565e, POLY = 0x22252a, WOOD = 0x7d4f27, WOOD2 = 0x5e3a1b, OLIVE = 0x4c5a3c, STEEL = 0xc2c7cc, LENS = 0x25506b;
 // 抓握点（武器局部坐标，-Z 为枪口方向）
 export const GUN = {
-  rifle:   { grip: [0, -0.055, 0.07],  fore: [0, 0.005, -0.27],  butt: 0.30, mz: -0.61, mv: 0.036, long: true },
-  smg:     { grip: [0, -0.05, 0.075],  fore: [0, -0.05, -0.115], butt: 0.29, mz: -0.31, mv: 0.04,  long: true },
-  shotgun: { grip: [0, -0.02, 0.115],  fore: [0, 0.01, -0.32],   butt: 0.32, mz: -0.65, mv: 0.05,  long: true },
+  rifle:   { grip: [0, -0.055, 0.07],  fore: [0, 0.005, -0.27],  butt: 0.30, mz: -0.61, mv: 0.036, long: true, sight: 0.092 },
+  smg:     { grip: [0, -0.05, 0.075],  fore: [0, -0.05, -0.115], butt: 0.29, mz: -0.31, mv: 0.04,  long: true, sight: 0.1 },
+  shotgun: { grip: [0, -0.02, 0.115],  fore: [0, 0.01, -0.32],   butt: 0.32, mz: -0.65, mv: 0.05,  long: true, sight: 0.072 },
   sniper:  { grip: [0, -0.06, 0.11],   fore: [0, -0.012, -0.2],  butt: 0.36, mz: -0.70, mv: 0.05,  long: true },
-  pistol:  { grip: [0, -0.07, 0.07],   fore: [-0.03, -0.085, 0.06], butt: 0, mz: -0.115, mv: 0.022, long: false },
+  pistol:  { grip: [0, -0.07, 0.07],   fore: [-0.03, -0.085, 0.06], butt: 0, mz: -0.115, mv: 0.022, long: false, sight: 0.05 },
   knife:   { grip: [0, 0, 0.055],      fore: null, butt: 0, mz: -0.2, mv: 0, long: false },
 };
 function buildGun(id) {

@@ -48,6 +48,9 @@
   #scope::before, #scope::after { content: ""; position: absolute; background: #000; }
   #scope::before { left: 0; right: 0; top: 50%; height: 1px; } #scope::after { top: 0; bottom: 0; left: 50%; width: 1px; }
 
+  #kc { position: absolute; top: 57%; width: 100%; text-align: center; font-size: 16px; font-weight: 700; color: #ffd27a; letter-spacing: 2px; text-shadow: 0 1px 6px #000; opacity: 0; will-change: opacity; }
+  #dir { position: absolute; left: 50%; top: 50%; width: 320px; height: 320px; margin: -160px; opacity: 0; will-change: transform, opacity; }
+  #dir i { position: absolute; left: 50%; top: 0; width: 120px; height: 26px; margin-left: -60px; border-top: 6px solid rgba(255,40,30,.9); border-radius: 50% 50% 0 0 / 100% 100% 0 0; filter: drop-shadow(0 0 6px rgba(255,0,0,.8)); }
   #hint { position: absolute; top: 62%; width: 100%; text-align: center; font-size: 15px; color: #fff; text-shadow: 0 1px 6px #000; }
   #fps { position: absolute; left: 14px; top: 142px; font-size: 12px; background: rgba(0,0,0,.5); padding: 2px 6px; border-radius: 3px; }
   #dmg { will-change: opacity; }
@@ -94,7 +97,7 @@
   <div id="hit"></div>
   <div id="dmg"></div>
   <div id="scope" class="hidden"></div>
-  <div id="msg"></div><div id="sub"></div><div id="hint"></div><div id="fps" class="hidden"></div>
+  <div id="msg"></div><div id="sub"></div><div id="hint"></div><div id="kc"></div><div id="dir"><i></i></div><div id="fps" class="hidden"></div>
   <div id="bl">
     <div class="stat"><small>生命</small><span id="hp">100</span></div>
     <div class="stat"><small>护甲</small><span id="armor">0</span></div>
@@ -116,7 +119,7 @@
     <button class="go" id="start">开始战斗</button>
     <div class="keys">
       <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动　<kbd>空格</kbd> 跳跃　<kbd>C</kbd> 蹲下　<kbd>Shift</kbd> 静步<br>
-      <kbd>鼠标左键</kbd> 开火　<kbd>右键</kbd> 开镜（狙击枪）　<kbd>R</kbd> 换弹　<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/<kbd>滚轮</kbd>/<kbd>Q</kbd> 切换武器<br>
+      <kbd>鼠标左键</kbd> 开火　<kbd>右键</kbd> 按住机瞄 / 狙击枪开镜　<kbd>R</kbd> 换弹　<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>/<kbd>滚轮</kbd>/<kbd>Q</kbd> 切换武器<br>
       <kbd>E</kbd> 拾取/更换地上的枪　<kbd>G</kbd> 丢弃主武器　<kbd>B</kbd> 购买（回合开始阶段）<br>
       <kbd>Tab</kbd> 计分板　<kbd>F3</kbd> 显示帧率　<kbd>Esc</kbd> 暂停　卡顿时请把画质调低<br>
       先赢得 8 个回合的队伍获胜。
