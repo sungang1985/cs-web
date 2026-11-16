@@ -530,18 +530,32 @@ function switchTo(slot) {
   player.nextFire = Math.max(player.nextFire, time + 0.3); vmSwitch = 1; player.heat = 0;
 }
 function buy(item) {
-  if (!canBuy()) return;
+  if (!canBuy()) return toast('购买时间已过');
   const price = item.w ? W[item.w].price : item.price;
-  if (player.money < price) return sndClick();
-  if (item.w) { if (player.inv[0] === item.w) return; giveWeapon(player, item.w); const ls = player.cur === 0 ? lastSlot : player.cur; player.cur = -1; switchTo(0); lastSlot = ls; }
-  else if (item.armor) { if (player.armor >= 100) return; player.armor = 100; }
-  else if (item.ammo) {
+  const name = item.w ? W[item.w].name : item.name;
+  const broke = () => { sndClick(); toast('资金不足'); };
+  if (item.w) {
+    if (player.inv[0] === item.w) return toast('已持有该武器');
+    if (player.money < price) return broke();
+    if (player.inv[0]) dropLoose(player);            // 原主武器丢在脚下
+    giveWeapon(player, item.w); const ls = player.cur === 0 ? lastSlot : player.cur; player.cur = -1; switchTo(0); lastSlot = ls;
+  } else if (item.armor) {
+    if (player.armor >= 100) return toast('护甲已满');
+    if (player.money < price) return broke();
+    player.armor = 100;
+  } else if (item.ammo) {
+    // 补满所有枪的弹匣和备弹（以前只看备弹，弹匣打空但备弹满时买不了）
     let need = false;
-    for (const id of player.inv) if (id && !W[id].melee && player.ammo[id].res < W[id].res) { player.ammo[id].res = W[id].res; need = true; }
-    if (!need) return;
+    for (const id of player.inv) if (id && !W[id].melee && (player.ammo[id].res < W[id].res || player.ammo[id].mag < W[id].mag)) need = true;
+    if (!need) return toast('弹药已满');
+    if (player.money < price) return broke();
+    for (const id of player.inv) if (id && !W[id].melee) { player.ammo[id].res = W[id].res; player.ammo[id].mag = W[id].mag; }
+    player.reloadEnd = 0;
   }
   player.money -= price; beep(900, 0.08, 0.15, 'triangle');
+  toast('已购买 ' + name + '  -$' + price);
 }
+function toast(t) { hudCache.kc = null; setText('kc', t); kcT = 1.8; }
 addEventListener('keydown', (e) => {
   if (e.code === 'F3') { e.preventDefault(); fpsShow = !fpsShow; $('fps').classList.toggle('hidden', !fpsShow); }
   if (!inGame()) return;
@@ -550,8 +564,8 @@ addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Tab') boardOpen = true;
   if (paused || !player.alive) return;
-  if (e.code === 'KeyB') buyOpen = canBuy() && !buyOpen;
-  else if (buyOpen && /^Digit[1-6]$/.test(e.code)) buy(BUY[+e.code.slice(5) - 1]);
+  if (e.code === 'KeyB') { if (!buyOpen && !canBuy()) toast('只能在回合开始阶段购买'); buyOpen = canBuy() && !buyOpen; }
+  else if (buyOpen && /^(Digit|Numpad)[1-6]$/.test(e.code)) buy(BUY[+e.code.slice(-1) - 1]);
   else if (/^Digit[1-3]$/.test(e.code)) switchTo(+e.code.slice(5) - 1);
   else if (e.code === 'KeyQ') switchTo(lastSlot);
   else if (e.code === 'KeyR') startReload(player);
