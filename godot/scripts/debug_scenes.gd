@@ -45,5 +45,5 @@ static func run(m: Main, args: Dictionary, frame: int) -> void:
 			p.view_pitch = -0.3
 	if frame == shot_frame:
 		m.get_viewport().get_texture().get_image().save_png(args.shot)
-		print("SHOT SAVED")
+		print("SHOT SAVED draw_calls=%d objects=%d" % [Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)])
 		m.get_tree().quit()

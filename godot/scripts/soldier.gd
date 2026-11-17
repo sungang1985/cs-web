@@ -16,6 +16,11 @@ const POLE := [Vector3(0.55, -1, 0.25), Vector3(-0.7, -0.9, 0.1)]
 static var _mats := {}
 static var _meshes := {}
 static var POSE := {}
+static var _bone_meshes := {}     # "队伍:骨骼序号" → 合并后的网格（所有角色共用）
+static var _body_mat: StandardMaterial3D
+
+var _acc := {}                    # 构建时：骨骼节点 → MeshAcc
+var _bones: Array[Node3D] = []
 
 var hips: Node3D
 var upper: Node3D
@@ -112,11 +117,9 @@ static func _cyl(rt2: float, rb: float, h: float) -> Mesh:
 
 
 func _part(parent: Node3D, mesh: Mesh, col: Color, pos: Vector3, rot := Vector3.ZERO, scl := Vector3.ONE) -> void:
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.material_override = mat(col)
-	mi.transform = Transform3D(Basis.from_euler(rot, EULER_ORDER_XYZ).scaled_local(scl), pos)
-	parent.add_child(mi)
+	if not _acc.has(parent):
+		return   # 该骨骼的合并网格已有缓存
+	(_acc[parent] as MeshAcc).add(mesh, Transform3D(Basis.from_euler(rot, EULER_ORDER_XYZ).scaled_local(scl), pos), col)
 
 
 func _bone(parent: Node3D, pos: Vector3, order := EULER_ORDER_YXZ) -> Node3D:
@@ -124,16 +127,21 @@ func _bone(parent: Node3D, pos: Vector3, order := EULER_ORDER_YXZ) -> Node3D:
 	n.position = pos
 	n.rotation_order = order
 	parent.add_child(n)
+	_bones.append(n)
 	return n
 
 
 func build(team: String, root: Node3D) -> void:
 	world_root = root
 	var c: Dictionary = PAL[team]
+	var cached := _bone_meshes.has(team + ":0")
 	hips = _bone(self, Vector3(0, HIP_Y, 0))
 	upper = _bone(hips, Vector3(0, 0.08, 0), EULER_ORDER_XYZ)
 	chest = _bone(upper, Vector3.ZERO)
 	head = _bone(chest, Vector3(0, 0.46, 0))
+	if not cached:
+		for b in [hips, chest, head]:
+			_acc[b] = MeshAcc.new()
 	# 骨盆
 	_part(hips, _capsule(0.115, 0.14), c.pants, Vector3(0, -0.01, 0), Vector3(0, 0, PI / 2), Vector3(1, 1, 0.85))
 	_part(hips, _box(Vector3(0.37, 0.05, 0.25)), c.gear, Vector3(0, 0.075, 0))
@@ -169,21 +177,24 @@ func build(team: String, root: Node3D) -> void:
 	for i in 2:
 		var side := 1.0 if i == 0 else -1.0
 		var s := _bone(chest, Vector3(0.2 * side, 0.38, 0))
+		var e := _bone(s, Vector3(0, -UA, 0))
+		var t := _bone(hips, Vector3(0.095 * side, -0.02, 0), EULER_ORDER_XYZ)
+		var k := _bone(t, Vector3(0, -TH, 0))
+		if not cached:
+			for b in [s, e, t, k]:
+				_acc[b] = MeshAcc.new()
 		_part(s, _sphere(0.072), c.uni, Vector3.ZERO)
 		_part(s, _capsule(0.05, 0.2), c.uni, Vector3(0, -0.15, 0))
 		if i == 1:
 			_part(s, _cyl(0.056, 0.056, 0.04), c.accent, Vector3(0, -0.12, 0))
-		var e := _bone(s, Vector3(0, -UA, 0))
 		_part(e, _sphere(0.054), c.gear, Vector3(0, 0, 0.004))
 		_part(e, _capsule(0.044, 0.19), c.uni, Vector3(0, -0.14, 0))
 		_part(e, _cyl(0.047, 0.044, 0.05), c.glove, Vector3(0, -0.265, 0))
 		_part(e, _sphere(0.047), c.glove, Vector3(0, -0.325, 0), Vector3.ZERO, Vector3(0.85, 1.15, 1.05))
 		sh.append(s)
 		el.append(e)
-		var t := _bone(hips, Vector3(0.095 * side, -0.02, 0), EULER_ORDER_XYZ)
 		_part(t, _capsule(0.09, 0.27), c.pants, Vector3(0, -0.22, 0), Vector3.ZERO, Vector3(1, 1, 1.08))
 		_part(t, _box(Vector3(0.05, 0.13, 0.11)), c.gear, Vector3(side * 0.085, -0.2, 0))
-		var k := _bone(t, Vector3(0, -TH, 0))
 		_part(k, _sphere(0.07), c.gear, Vector3(0, 0, -0.018), Vector3.ZERO, Vector3(1, 1.1, 0.9))
 		_part(k, _capsule(0.068, 0.24), c.pants, Vector3(0, -0.2, 0.008))
 		_part(k, _capsule(0.07, 0.08), c.boot, Vector3(0, -0.37, 0.008))
@@ -191,6 +202,21 @@ func build(team: String, root: Node3D) -> void:
 		_part(k, _box(Vector3(0.11, 0.03, 0.27)), Color("0c0c0d"), Vector3(0, -0.478, -0.045))
 		th.append(t)
 		kn.append(k)
+	# 每根骨骼一个合并网格（同队共用），每个角色约 12 次绘制
+	if _body_mat == null:
+		_body_mat = StandardMaterial3D.new()
+		_body_mat.vertex_color_use_as_albedo = true
+		_body_mat.vertex_color_is_srgb = true
+		_body_mat.roughness = 0.9
+	for i in _bones.size():
+		var key := "%s:%d" % [team, i]
+		if _acc.has(_bones[i]):
+			_bone_meshes[key] = (_acc[_bones[i]] as MeshAcc).commit(_body_mat)
+		if _bone_meshes.has(key):
+			var mi := MeshInstance3D.new()
+			mi.mesh = _bone_meshes[key]
+			_bones[i].add_child(mi)
+	_acc.clear()
 	anchor = _bone(upper, Vector3.ZERO)
 	holder = Node3D.new()
 	anchor.add_child(holder)

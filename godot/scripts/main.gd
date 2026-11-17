@@ -81,8 +81,46 @@ func _ready() -> void:
 	add_child(hud)
 	hud.build(self)
 	space = get_world_3d().direct_space_state
+	get_tree().root.size_changed.connect(_fit_resolution)
+	_fit_resolution()
 	if test_args.has("autotest") or test_args.has("shot"):
 		new_match(test_args.get("team", "blue"), "normal")
+
+
+# 限制 3D 渲染像素量：高分屏 / 大窗口下按比例降低内部分辨率，界面仍按原生分辨率绘制
+func _fit_resolution() -> void:
+	var sz := DisplayServer.window_get_size()
+	var budget := 1.6e6 if OS.has_feature("web") else 3.7e6
+	get_viewport().scaling_3d_scale = clampf(sqrt(budget / maxf(1.0, float(sz.x * sz.y))), 0.5, 1.0)
+
+
+# 开局时让所有特效在镜头前出现几帧，把着色器编译的停顿挪到冻结时间里
+func _prewarm() -> void:
+	var p := cam.global_position - cam.global_transform.basis.z * 4.0
+	for i in 3:
+		for fl in flashes:
+			fl.n.global_position = p
+			fl.n.visible = true
+			fl.t = 0.2
+		for d in dust:
+			d.global_position = p
+			d.restart()
+		for b in blood:
+			b.global_position = p
+			b.restart()
+		fx_decal(p, Vector3.UP)
+		fx_casing(p, Vector3.UP)
+		player.flash_t = 0.1
+		tracer_mesh.clear_surfaces()
+		tracer_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+		tracer_mesh.surface_set_color(Color(0, 0, 0))
+		tracer_mesh.surface_add_vertex(p)
+		tracer_mesh.surface_set_color(Color(0, 0, 0))
+		tracer_mesh.surface_add_vertex(p + Vector3.UP)
+		tracer_mesh.surface_end()
+		await get_tree().process_frame
+	decal_i = 0
+	decals.visible_instance_count = 0
 
 
 # ======================= 场景 =======================
@@ -124,8 +162,13 @@ func _build_env() -> void:
 	sun.light_color = Color(1.0, 0.94, 0.82)
 	sun.light_energy = 1.05
 	sun.shadow_enabled = true
-	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	sun.directional_shadow_max_distance = 90.0
+	# 网页版用更省的阴影设置
+	var web := OS.has_feature("web")
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if web else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_max_distance = 55.0 if web else 90.0
+	if web:
+		RenderingServer.directional_shadow_atlas_set_size(2048, true)
+		get_viewport().msaa_3d = Viewport.MSAA_2X
 	sun.shadow_bias = 0.04
 	add_child(sun)
 
@@ -137,20 +180,22 @@ func _surface(kind: int) -> ShaderMaterial:
 	return m
 
 
+var _world_acc := {}
+
+
+## 碰撞体逐个添加；可见网格按材质合并，整个场景只有 5 次绘制
 func _add_box(body: StaticBody3D, mat: Material, a: Vector3, b: Vector3) -> void:
 	var size := b - a
-	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = size
-	mi.mesh = bm
-	mi.material_override = mat
-	mi.position = (a + b) * 0.5
-	body.add_child(mi)
+	if not _world_acc.has(mat):
+		_world_acc[mat] = MeshAcc.new()
+	(_world_acc[mat] as MeshAcc).add(bm, Transform3D(Basis.IDENTITY, (a + b) * 0.5), Color.WHITE)
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
 	bs.size = size
 	cs.shape = bs
-	cs.position = mi.position
+	cs.position = (a + b) * 0.5
 	body.add_child(cs)
 
 
@@ -185,6 +230,11 @@ func _build_world() -> void:
 				elif c == "X":
 					_add_box(body, m_cont, Vector3(x * C, 0, z * C), Vector3((x + 1) * C, 2.2, (z + 1) * C))
 				x += 1
+	for mat in _world_acc:
+		var mi := MeshInstance3D.new()
+		mi.mesh = (_world_acc[mat] as MeshAcc).commit(mat)
+		add_child(mi)
+	_world_acc.clear()
 
 
 func _build_nav() -> void:
@@ -863,6 +913,7 @@ func new_match(team: String, diff_key: String) -> void:
 	hud.set_hud_visible(true)
 	paused = false
 	start_round()
+	_prewarm()
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 

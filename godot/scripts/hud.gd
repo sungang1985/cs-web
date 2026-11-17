@@ -32,6 +32,9 @@ var dmg_flash := 0.0
 var seen: Array = []
 var seen_t := 0.0
 var show_fps := false
+var worst_ms := 0.0
+var worst_show := 0.0
+var worst_t := 0.0
 var choice := {"team": "blue", "diff": "normal"}
 
 
@@ -343,7 +346,7 @@ func update(dt: float) -> void:
 	_place(L.sub, 0, vs.y * 0.24 + 46, vs.x, 22)
 	_place(L.kc, 0, vs.y * 0.57, vs.x, 24)
 	_place(L.hint, 0, vs.y * 0.62, vs.x, 22)
-	_place(L.fps, 14, 142, 300, 16)
+	_place(L.fps, 14, 142, 520, 16)
 	_place(feed, vs.x - 416, 12, 400, 160)
 	# 数值
 	L.hp.text = str(maxi(0, p.hp))
@@ -393,8 +396,17 @@ func update(dt: float) -> void:
 		board_text.text = _board_bb()
 		board_panel.reset_size()
 		board_panel.position = (vs - board_panel.size) * 0.5
+	# 帧率 / 最慢帧（过去一秒内最长的一帧，用来区分"帧率低"和"偶发停顿"）
+	var real_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	worst_ms = maxf(worst_ms, real_ms)
+	worst_t += dt
+	if worst_t >= 1.0:
+		worst_t = 0.0
+		worst_show = worst_ms
+		worst_ms = 0.0
 	if show_fps:
-		L.fps.text = "%d FPS · %d×%d" % [Engine.get_frames_per_second(), get_viewport().size.x, get_viewport().size.y]
+		var vp := get_viewport()
+		L.fps.text = "%d FPS · 最慢帧 %.0f ms · 3D %d×%d · 绘制 %d" % [Engine.get_frames_per_second(), worst_show, int(vp.size.x * vp.scaling_3d_scale), int(vp.size.y * vp.scaling_3d_scale), Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)]
 	# 雷达上可见的敌人
 	if main.time >= seen_t:
 		seen_t = main.time + 0.25
