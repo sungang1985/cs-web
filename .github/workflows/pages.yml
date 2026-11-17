@@ -1,0 +1,77 @@
+# 导出 Godot 版为网页并发布到 GitHub Pages。
+# 站点根目录是 Godot 版；/classic/ 是纯前端的网页版。
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - claude/web-counter-strike-1-5-tcxpl4
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: "4.7"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot and web export template
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-web-nothreads
+
+      - name: Download Godot and web export template
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          mkdir -p ~/godot "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          curl -fsSL -o /tmp/godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d ~/godot
+          mv ~/godot/Godot_v*_linux.x86_64 ~/godot/godot
+          curl -fsSL -o /tmp/templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q -j /tmp/templates.tpz templates/web_nothreads_release.zip templates/version.txt \
+            -d "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+
+      - name: Export Godot web build
+        run: |
+          mkdir -p site
+          ~/godot/godot --headless --path godot --import
+          ~/godot/godot --headless --path godot --export-release "Web" "$PWD/site/index.html"
+          test -s site/index.wasm && test -s site/index.pck
+
+      - name: Add classic web version
+        run: |
+          mkdir -p site/classic
+          cp -r index.html src vendor site/classic/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

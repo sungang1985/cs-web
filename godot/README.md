@@ -11,6 +11,15 @@
 
 也可以用命令行直接运行：`godot --path godot`
 
+## 在线试玩（GitHub Pages）
+
+推送到仓库后，`.github/workflows/pages.yml` 会自动把本工程导出为网页并发布到 GitHub Pages：
+
+- 站点根目录：Godot 版
+- `/classic/`：纯前端的网页版
+
+首次使用需要在仓库 Settings → Pages 把 Source 设为 **GitHub Actions**。
+
 ## 导出
 
 在编辑器的"项目 → 导出"里添加预设即可导出 Windows / macOS / Linux 桌面版，

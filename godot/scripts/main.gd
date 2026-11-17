@@ -29,6 +29,8 @@ var sens := 1.0
 var paused := false
 var spec_target: Fighter = null
 var whiz_t := 0.0
+var unlocked_t := 0.0
+var auto_paused := false
 
 var hud: Hud
 var sfx: Sfx
@@ -1045,6 +1047,21 @@ func _process(delta: float) -> void:
 		var c := MapData.center()
 		cam.global_position = c + Vector3(cos(a) * 30.0, 22.0, sin(a) * 26.0)
 		cam.look_at(c)
+	# 浏览器里按 Esc 会直接释放鼠标且不把按键传给游戏：鼠标持续未锁定就进入暂停。
+	# 锁定是异步的，所以留半秒宽限；自动暂停后一旦重新锁定就自动继续。
+	if in_game() and test_args.is_empty() and DisplayServer.get_name() != "headless":
+		var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+		if not paused:
+			unlocked_t = 0.0 if captured else unlocked_t + delta
+			if unlocked_t > 0.5:
+				paused = true
+				auto_paused = true
+				hud.pause_label.visible = true
+		elif auto_paused and captured:
+			paused = false
+			auto_paused = false
+			unlocked_t = 0.0
+			hud.pause_label.visible = false
 	_test_hooks()
 
 
@@ -1069,6 +1086,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if paused:
 			if event.pressed:
 				paused = false
+				auto_paused = false
+				unlocked_t = 0.0
 				hud.pause_label.visible = false
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		else:
